@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "Chrome拡張メモアプリ",
+  "version": "1.0.0",
+  "description": "ブラウザ右上に表示される軽量なメモパネル（オーバーレイ）で、フォルダ分けされたメモと固定クイックメモを扱える拡張機能",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "identity"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "メモアプリ"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["panel.css"],
+      "run_at": "document_end",
+      "all_frames": false
+    }
+  ],
+  "commands": {
+    "toggle-panel": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+M",
+        "mac": "Command+Shift+M"
+      },
+      "description": "メモパネルを開閉"
+    },
+    "quick-append": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+A",
+        "mac": "Command+Shift+A"
+      },
+      "description": "クイックメモに追記"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

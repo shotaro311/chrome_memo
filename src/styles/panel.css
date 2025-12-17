@@ -1,0 +1,655 @@
+/* ========================================
+   パネル全体（ダークモード）
+   ======================================== */
+
+.chrome-memo-panel {
+  position: fixed !important;
+  top: 20px !important;
+  right: 20px !important;
+  background: #1e1e1e !important;
+  border: 1px solid #404040 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5) !important;
+  z-index: 2147483647 !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
+  font-size: 14px !important;
+  color: #e0e0e0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+.chrome-memo-panel.is-hidden {
+  display: none !important;
+}
+
+/* ========================================
+   ヘッダー（ダークモード）
+   ======================================== */
+
+.chrome-memo-panel .panel-header {
+  background: #2d2d2d !important;
+  color: #ffffff !important;
+  padding: 12px 16px !important;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  border-bottom: 1px solid #404040 !important;
+}
+
+.chrome-memo-panel .panel-header h2 {
+  margin: 0 !important;
+  font-size: 16px !important;
+  font-weight: 600 !important;
+}
+
+.chrome-memo-panel .header-left {
+  display: flex !important;
+  gap: 8px !important;
+  align-items: center !important;
+  flex: 1 !important;
+  min-width: 0 !important;
+}
+
+.chrome-memo-panel .memo-current-label {
+  margin-left: auto !important;
+  min-width: 0 !important;
+  font-size: 12px !important;
+  color: #bdbdbd !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.chrome-memo-panel .header-btn {
+  background: transparent !important;
+  border: none !important;
+  color: #ffffff !important;
+  font-size: 14px !important;
+  cursor: pointer !important;
+  padding: 4px 6px !important;
+  border-radius: 4px !important;
+  transition: background 0.2s !important;
+  opacity: 0.7 !important;
+}
+
+.chrome-memo-panel .header-btn:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  opacity: 1 !important;
+}
+
+.chrome-memo-panel .close-btn {
+  background: transparent !important;
+  border: none !important;
+  color: #ffffff !important;
+  font-size: 24px !important;
+  cursor: pointer !important;
+  padding: 0 !important;
+  width: 28px !important;
+  height: 28px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 4px !important;
+  transition: background 0.2s !important;
+  pointer-events: auto !important;
+  z-index: 10 !important;
+  position: relative !important;
+}
+
+.chrome-memo-panel .close-btn:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* ========================================
+   コンテンツエリア（ダークモード）
+   ======================================== */
+
+.chrome-memo-panel .panel-content {
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+}
+
+/* ========================================
+   メモテキストエリア（ダークモード）
+   ======================================== */
+
+.chrome-memo-panel .memo-textarea {
+  width: 100% !important;
+  height: 100% !important;
+  padding: 20px !important;
+  border: none !important;
+  background: #1e1e1e !important;
+  color: #ffffff !important;
+  font-family: 'Menlo', 'Monaco', 'Courier New', monospace !important;
+  font-size: 15px !important;
+  line-height: 1.6 !important;
+  resize: none !important;
+  box-sizing: border-box !important;
+  outline: none !important;
+}
+
+.chrome-memo-panel .memo-textarea::placeholder {
+  color: #808080 !important;
+}
+
+.chrome-memo-panel .memo-textarea::-webkit-scrollbar {
+  width: 12px !important;
+}
+
+.chrome-memo-panel .memo-textarea::-webkit-scrollbar-track {
+  background: #2d2d2d !important;
+}
+
+.chrome-memo-panel .memo-textarea::-webkit-scrollbar-thumb {
+  background: #555 !important;
+  border-radius: 6px !important;
+}
+
+.chrome-memo-panel .memo-textarea::-webkit-scrollbar-thumb:hover {
+  background: #666 !important;
+}
+
+/* ========================================
+   メモセクション
+   ======================================== */
+
+.chrome-memo-panel .notes-section {
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  border: 1px solid #e0e0e0 !important;
+  border-radius: 6px !important;
+  background: white !important;
+}
+
+/* 検索バー */
+.chrome-memo-panel .search-bar {
+  padding: 12px !important;
+  border-bottom: 1px solid #e0e0e0 !important;
+}
+
+.chrome-memo-panel .search-input {
+  width: 100% !important;
+  padding: 8px 12px !important;
+  border: 1px solid #ddd !important;
+  border-radius: 4px !important;
+  font-size: 13px !important;
+  box-sizing: border-box !important;
+}
+
+.chrome-memo-panel .search-input:focus {
+  outline: none !important;
+  border-color: #4a90e2 !important;
+}
+
+/* フォルダタブコンテナ */
+.chrome-memo-panel .folder-tabs-container {
+  display: flex !important;
+  align-items: center !important;
+  background: #f5f5f5 !important;
+  border-bottom: 1px solid #e0e0e0 !important;
+  padding: 8px 12px !important;
+  gap: 8px !important;
+}
+
+/* フォルダタブ */
+.chrome-memo-panel .folder-tabs {
+  display: flex !important;
+  gap: 4px !important;
+  overflow-x: auto !important;
+  flex: 1 !important;
+}
+
+.chrome-memo-panel .folder-actions-toolbar {
+  display: flex !important;
+  gap: 4px !important;
+}
+
+.chrome-memo-panel .folder-tab {
+  padding: 6px 12px !important;
+  background: white !important;
+  border: 1px solid #ddd !important;
+  border-radius: 4px !important;
+  font-size: 12px !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
+  transition: all 0.2s !important;
+}
+
+.chrome-memo-panel .folder-tab:hover {
+  background: #e8f4fd !important;
+  border-color: #4a90e2 !important;
+}
+
+.chrome-memo-panel .folder-tab.active {
+  background: #4a90e2 !important;
+  color: white !important;
+  border-color: #4a90e2 !important;
+}
+
+/* メモ一覧 */
+.chrome-memo-panel .note-list {
+  flex: 1 !important;
+  overflow-y: auto !important;
+  padding: 8px !important;
+}
+
+.chrome-memo-panel .note-item {
+  padding: 12px !important;
+  border: 1px solid #e0e0e0 !important;
+  border-radius: 4px !important;
+  margin-bottom: 8px !important;
+  cursor: pointer !important;
+  transition: all 0.2s !important;
+}
+
+.chrome-memo-panel .note-item:hover {
+  background: #f5f5f5 !important;
+  border-color: #4a90e2 !important;
+}
+
+.chrome-memo-panel .note-item-title {
+  font-weight: 600 !important;
+  margin-bottom: 4px !important;
+  color: #333 !important;
+}
+
+.chrome-memo-panel .note-item-preview {
+  font-size: 12px !important;
+  color: #666 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.chrome-memo-panel .empty-message {
+  text-align: center !important;
+  padding: 24px !important;
+  color: #999 !important;
+  font-size: 13px !important;
+}
+
+/* メモエディタ */
+.chrome-memo-panel .note-editor {
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  padding: 12px !important;
+  border-top: 1px solid #e0e0e0 !important;
+  background: white !important;
+}
+
+.chrome-memo-panel .note-editor-header {
+  display: flex !important;
+  gap: 8px !important;
+  margin-bottom: 8px !important;
+}
+
+.chrome-memo-panel .note-title-input {
+  flex: 1 !important;
+  padding: 8px 12px !important;
+  border: 1px solid #ddd !important;
+  border-radius: 4px !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+}
+
+.chrome-memo-panel .note-title-input:focus {
+  outline: none !important;
+  border-color: #4a90e2 !important;
+}
+
+.chrome-memo-panel .note-editor-actions {
+  display: flex !important;
+  gap: 4px !important;
+  align-items: center !important;
+}
+
+.chrome-memo-panel .icon-btn {
+  background: #f0f0f0 !important;
+  border: none !important;
+  color: #666 !important;
+  font-size: 16px !important;
+  cursor: pointer !important;
+  padding: 6px 8px !important;
+  border-radius: 4px !important;
+  transition: background 0.2s !important;
+}
+
+.chrome-memo-panel .icon-btn:hover {
+  background: #e0e0e0 !important;
+}
+
+.chrome-memo-panel .close-note-btn {
+  background: #f0f0f0 !important;
+  border: none !important;
+  color: #666 !important;
+  font-size: 18px !important;
+  cursor: pointer !important;
+  padding: 0 !important;
+  width: 32px !important;
+  height: 32px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 4px !important;
+}
+
+.chrome-memo-panel .close-note-btn:hover {
+  background: #e0e0e0 !important;
+}
+
+.chrome-memo-panel .note-content-textarea {
+  flex: 1 !important;
+  padding: 12px !important;
+  border: 1px solid #ddd !important;
+  border-radius: 4px !important;
+  font-family: inherit !important;
+  font-size: 13px !important;
+  resize: none !important;
+  box-sizing: border-box !important;
+}
+
+.chrome-memo-panel .note-content-textarea:focus {
+  outline: none !important;
+  border-color: #4a90e2 !important;
+}
+
+/* ========================================
+   リサイズハンドル（ダークモード）
+   ======================================== */
+
+.chrome-memo-panel .resize-handle {
+  position: absolute !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  width: 20px !important;
+  height: 20px !important;
+  cursor: nwse-resize !important;
+  background: linear-gradient(135deg, transparent 50%, #555 50%) !important;
+}
+
+/* ========================================
+   スクロールバーのスタイリング（ダークモード）
+   ======================================== */
+
+.chrome-memo-panel ::-webkit-scrollbar {
+  width: 12px !important;
+  height: 12px !important;
+}
+
+.chrome-memo-panel ::-webkit-scrollbar-track {
+  background: #2d2d2d !important;
+  border-radius: 6px !important;
+}
+
+.chrome-memo-panel ::-webkit-scrollbar-thumb {
+  background: #555 !important;
+  border-radius: 6px !important;
+}
+
+.chrome-memo-panel ::-webkit-scrollbar-thumb:hover {
+  background: #666 !important;
+}
+
+/* ========================================
+   モーダル（ダークモード）
+   ======================================== */
+
+.chrome-memo-panel .file-modal,
+.chrome-memo-panel .save-modal,
+.chrome-memo-panel .auth-modal {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  background: rgba(0, 0, 0, 0.7) !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 100 !important;
+}
+
+.chrome-memo-panel .file-modal-content,
+.chrome-memo-panel .save-modal-content,
+.chrome-memo-panel .auth-modal-content {
+  background: #2d2d2d !important;
+  border-radius: 8px !important;
+  width: 90% !important;
+  max-width: 500px !important;
+  max-height: 80% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5) !important;
+}
+
+.chrome-memo-panel .file-modal-header,
+.chrome-memo-panel .save-modal-header,
+.chrome-memo-panel .auth-modal-header {
+  padding: 16px 20px !important;
+  border-bottom: 1px solid #404040 !important;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+}
+
+.chrome-memo-panel .file-modal-header h3,
+.chrome-memo-panel .save-modal-header h3,
+.chrome-memo-panel .auth-modal-header h3 {
+  margin: 0 !important;
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  color: #ffffff !important;
+}
+
+.chrome-memo-panel .close-modal-btn {
+  background: transparent !important;
+  border: none !important;
+  color: #ffffff !important;
+  font-size: 24px !important;
+  cursor: pointer !important;
+  padding: 0 !important;
+  width: 28px !important;
+  height: 28px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 4px !important;
+}
+
+.chrome-memo-panel .close-modal-btn:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+.chrome-memo-panel .file-modal-body,
+.chrome-memo-panel .save-modal-body,
+.chrome-memo-panel .auth-modal-body {
+  padding: 20px !important;
+  overflow-y: auto !important;
+  flex: 1 !important;
+}
+
+.chrome-memo-panel .auth-actions {
+  display: flex !important;
+  gap: 8px !important;
+  margin-top: 12px !important;
+}
+
+.chrome-memo-panel .auth-error {
+  margin-top: 12px !important;
+  color: #ff6b6b !important;
+  font-size: 13px !important;
+  word-break: break-word !important;
+}
+
+/* フォルダタブ */
+.chrome-memo-panel .folder-tabs {
+  display: flex !important;
+  gap: 4px !important;
+  margin-bottom: 16px !important;
+  overflow-x: auto !important;
+}
+
+.chrome-memo-panel .folder-tab {
+  padding: 8px 16px !important;
+  background: #404040 !important;
+  color: #e0e0e0 !important;
+  border: none !important;
+  border-radius: 4px !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
+  transition: all 0.2s !important;
+  font-size: 13px !important;
+}
+
+.chrome-memo-panel .folder-tab:hover {
+  background: #4a4a4a !important;
+}
+
+.chrome-memo-panel .folder-tab.active {
+  background: #4a90e2 !important;
+  color: #ffffff !important;
+}
+
+/* ファイルリスト */
+.chrome-memo-panel .file-list {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+}
+
+.chrome-memo-panel .file-item {
+  padding: 12px !important;
+  background: #404040 !important;
+  border-radius: 4px !important;
+  transition: all 0.2s !important;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+.chrome-memo-panel .file-item:hover {
+  background: #4a4a4a !important;
+}
+
+.chrome-memo-panel .file-item-info {
+  flex: 1 !important;
+  cursor: pointer !important;
+  overflow: hidden !important;
+}
+
+.chrome-memo-panel .file-item-title {
+  font-weight: 600 !important;
+  margin-bottom: 4px !important;
+  color: #ffffff !important;
+  font-size: 14px !important;
+}
+
+.chrome-memo-panel .file-item-preview {
+  font-size: 12px !important;
+  color: #b0b0b0 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.chrome-memo-panel .file-item-actions {
+  display: flex !important;
+  gap: 4px !important;
+  flex-shrink: 0 !important;
+}
+
+.chrome-memo-panel .file-action-btn {
+  background: transparent !important;
+  border: none !important;
+  cursor: pointer !important;
+  padding: 4px 6px !important;
+  font-size: 14px !important;
+  border-radius: 4px !important;
+  transition: background 0.2s !important;
+  opacity: 0.6 !important;
+}
+
+.chrome-memo-panel .file-action-btn:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  opacity: 1 !important;
+}
+
+.chrome-memo-panel .empty-message {
+  text-align: center !important;
+  padding: 40px 20px !important;
+  color: #808080 !important;
+  font-size: 14px !important;
+}
+
+/* 保存フォーム */
+.chrome-memo-panel .form-group {
+  margin-bottom: 16px !important;
+}
+
+.chrome-memo-panel .form-group label {
+  display: block !important;
+  margin-bottom: 8px !important;
+  color: #e0e0e0 !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+}
+
+.chrome-memo-panel .save-input,
+.chrome-memo-panel .save-select {
+  width: 100% !important;
+  padding: 10px 12px !important;
+  background: #404040 !important;
+  color: #ffffff !important;
+  border: 1px solid #555 !important;
+  border-radius: 4px !important;
+  font-size: 14px !important;
+  box-sizing: border-box !important;
+}
+
+.chrome-memo-panel .save-input:focus,
+.chrome-memo-panel .save-select:focus {
+  outline: none !important;
+  border-color: #4a90e2 !important;
+}
+
+.chrome-memo-panel .save-modal-actions {
+  display: flex !important;
+  gap: 8px !important;
+  justify-content: flex-end !important;
+  margin-top: 20px !important;
+}
+
+.chrome-memo-panel .btn-primary,
+.chrome-memo-panel .btn-secondary {
+  padding: 10px 20px !important;
+  border: none !important;
+  border-radius: 4px !important;
+  font-size: 14px !important;
+  cursor: pointer !important;
+  transition: all 0.2s !important;
+}
+
+.chrome-memo-panel .btn-primary {
+  background: #4a90e2 !important;
+  color: #ffffff !important;
+}
+
+.chrome-memo-panel .btn-primary:hover {
+  background: #357abd !important;
+}
+
+.chrome-memo-panel .btn-secondary {
+  background: #555 !important;
+  color: #ffffff !important;
+}
+
+.chrome-memo-panel .btn-secondary:hover {
+  background: #666 !important;
+}

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>メモアプリ</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <div class="popup-header">
+      <h1>メモアプリ</h1>
+    </div>
+
+    <!-- 認証セクション -->
+    <section class="auth-section">
+      <div id="auth-status" class="auth-status">
+        <div id="auth-signed-out" class="auth-signed-out">
+          <p>サインインすると、複数のデバイス間でメモを同期できます</p>
+          <button id="sign-in-btn" class="btn btn-primary">Googleでサインイン</button>
+          <p id="auth-error" class="auth-error" style="display: none;"></p>
+        </div>
+        <div id="auth-signed-in" class="auth-signed-in" style="display: none;">
+          <p>サインイン中: <span id="user-email"></span></p>
+          <div class="auth-actions">
+            <button id="sync-btn" class="btn btn-secondary">今すぐ同期</button>
+            <button id="sign-out-btn" class="btn btn-secondary">サインアウト</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="popup-content">
+      <!-- 最近使ったメモ -->
+      <section class="section">
+        <h2>最近使ったメモ</h2>
+        <div id="recent-notes" class="recent-notes-list"></div>
+      </section>
+
+      <!-- フォルダ管理 -->
+      <section class="section">
+        <h2>フォルダ</h2>
+        <div class="folder-actions">
+          <button id="create-folder-btn" class="btn btn-primary">新規フォルダ</button>
+        </div>
+        <div id="folder-list" class="folder-list"></div>
+      </section>
+
+      <!-- メモ管理 -->
+      <section class="section">
+        <h2>メモ</h2>
+        <div class="note-actions">
+          <button id="create-note-btn" class="btn btn-primary">新規メモ</button>
+        </div>
+        <div class="folder-select-wrapper">
+          <label for="folder-select">フォルダを選択:</label>
+          <select id="folder-select" class="folder-select"></select>
+        </div>
+        <div id="note-list" class="note-list"></div>
+      </section>
+
+      <!-- パネルを開く -->
+      <section class="section">
+        <button id="open-panel-btn" class="btn btn-large">パネルを開く</button>
+      </section>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,324 @@
+/* ========================================
+   全体
+   ======================================== */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  width: 380px;
+  min-height: 500px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 14px;
+  color: #333;
+  background: #f9f9f9;
+}
+
+.popup-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* ========================================
+   ヘッダー
+   ======================================== */
+
+.popup-header {
+  background: #4a90e2;
+  color: white;
+  padding: 16px 20px;
+  text-align: center;
+}
+
+.popup-header h1 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+/* ========================================
+   認証セクション
+   ======================================== */
+
+.auth-section {
+  background: #fff;
+  border-bottom: 1px solid #e0e0e0;
+  padding: 12px 16px;
+}
+
+.auth-status p {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  color: #666;
+}
+
+.auth-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.auth-error {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #d93025;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
+.btn-secondary {
+  background: #6c757d;
+  color: white;
+  font-size: 12px;
+  padding: 6px 12px;
+}
+
+.btn-secondary:hover {
+  background: #5a6268;
+}
+
+/* ========================================
+   コンテンツ
+   ======================================== */
+
+.popup-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.section {
+  background: white;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.section:last-child {
+  margin-bottom: 0;
+}
+
+.section h2 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: #666;
+  border-bottom: 1px solid #e0e0e0;
+  padding-bottom: 8px;
+}
+
+/* ========================================
+   ボタン
+   ======================================== */
+
+.btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: #4a90e2;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #357abd;
+}
+
+.btn-large {
+  width: 100%;
+  padding: 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.btn-icon {
+  background: transparent;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.btn-icon:hover {
+  opacity: 0.7;
+}
+
+/* ========================================
+   最近使ったメモ
+   ======================================== */
+
+.recent-notes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.recent-note-item {
+  padding: 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.recent-note-item:hover {
+  background: #f5f5f5;
+  border-color: #4a90e2;
+}
+
+.note-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: #333;
+}
+
+.note-preview {
+  font-size: 12px;
+  color: #666;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ========================================
+   フォルダ
+   ======================================== */
+
+.folder-actions {
+  margin-bottom: 12px;
+}
+
+.folder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.folder-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background: #fafafa;
+}
+
+.folder-name {
+  font-weight: 500;
+  color: #333;
+}
+
+.folder-actions {
+  display: flex;
+  gap: 4px;
+}
+
+/* ========================================
+   メモ
+   ======================================== */
+
+.note-actions {
+  margin-bottom: 12px;
+}
+
+.folder-select-wrapper {
+  margin-bottom: 12px;
+}
+
+.folder-select-wrapper label {
+  display: block;
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+.folder-select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  background: white;
+  cursor: pointer;
+}
+
+.folder-select:focus {
+  outline: none;
+  border-color: #4a90e2;
+}
+
+.note-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.note-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background: #fafafa;
+}
+
+.note-item .note-title {
+  flex: 1;
+  cursor: pointer;
+  margin-bottom: 0;
+}
+
+.note-item .note-title:hover {
+  color: #4a90e2;
+}
+
+.delete-note-btn {
+  margin-left: 8px;
+}
+
+/* ========================================
+   空メッセージ
+   ======================================== */
+
+.empty-message {
+  text-align: center;
+  padding: 20px;
+  color: #999;
+  font-size: 13px;
+}
+
+/* ========================================
+   スクロールバー
+   ======================================== */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
