@@ -6,8 +6,7 @@ import {
   PanelState,
   LIMITS,
   INBOX_FOLDER_ID,
-  AUTOSAVE_DEBOUNCE_MS,
-  EMPTY_NOTE_DELETE_TIMEOUT_MS
+  AUTOSAVE_DEBOUNCE_MS
 } from '../types';
 
 // ========================================
@@ -25,17 +24,19 @@ let panelState: PanelState = {
 };
 
 let folders: Folder[] = [];
-let notes: Note[] = [];
 let quickMemo: QuickMemo = { content: '', updatedAt: Date.now() };
 
 let autosaveTimer: number | null = null;
-let emptyNoteDeleteTimer: number | null = null;
 let currentEditingNoteId: string | null = null;
 
 // モード管理: 'quick' = クイックメモモード, 'note' = 通常メモモード
 let currentMode: 'quick' | 'note' = 'quick';
 let currentNoteTitle: string = '';
 let hasUnsavedChanges: boolean = false;
+
+const QUICK_MEMO_LABEL = 'クイックメモ';
+const QUICK_MEMO_PLACEHOLDER = 'ここにメモを入力...（クイックメモは自動保存されます）';
+const NOTE_PLACEHOLDER = 'ここにメモを入力...（保存ボタンで保存してください）';
 
 // ========================================
 // 初期化
@@ -105,11 +106,7 @@ async function openPanel(noteId?: string) {
     await refreshAuthButton();
 
     // クイックメモモードで開く
-    currentMode = 'quick';
-    renderMemo();
-
-    // テキストエリアにフォーカス
-    focusMemoTextarea();
+    switchToQuickMode();
   }
 }
 
@@ -408,11 +405,11 @@ function renderMemo() {
     // クイックメモモード
     if (textarea) {
       textarea.value = quickMemo.content;
-      textarea.placeholder = 'ここにメモを入力...（クイックメモは自動保存されます）';
+      textarea.placeholder = QUICK_MEMO_PLACEHOLDER;
     }
     if (currentLabel) {
-      currentLabel.textContent = 'クイックメモ';
-      currentLabel.title = 'クイックメモ';
+      currentLabel.textContent = QUICK_MEMO_LABEL;
+      currentLabel.title = QUICK_MEMO_LABEL;
     }
     if (saveBtn) {
       saveBtn.style.display = 'none';
@@ -420,7 +417,7 @@ function renderMemo() {
   } else {
     // 通常メモモード
     if (textarea) {
-      textarea.placeholder = 'ここにメモを入力...（保存ボタンで保存してください）';
+      textarea.placeholder = NOTE_PLACEHOLDER;
     }
     if (currentLabel) {
       const label = currentNoteTitle || '無題のメモ';
@@ -431,6 +428,31 @@ function renderMemo() {
       saveBtn.style.display = 'inline-flex';
     }
   }
+}
+
+function switchToQuickMode() {
+  currentMode = 'quick';
+  currentEditingNoteId = null;
+  currentNoteTitle = '';
+  hasUnsavedChanges = false;
+  renderMemo();
+  focusMemoTextarea();
+}
+
+function switchToNoteMode(note: Note, contentOverride?: string) {
+  currentMode = 'note';
+  currentEditingNoteId = note.id;
+  currentNoteTitle = note.title;
+  hasUnsavedChanges = false;
+  panelState.currentFolderId = note.folderId;
+
+  const textarea = panel?.querySelector('#memo-textarea') as HTMLTextAreaElement;
+  if (textarea) {
+    textarea.value = contentOverride ?? note.content;
+  }
+
+  renderMemo();
+  focusMemoTextarea();
 }
 
 function renderFileList(folderId: string) {
@@ -562,435 +584,6 @@ function renderSaveFolderSelect() {
   };
 }
 
-function renderFolders() {
-  if (!panel) return;
-
-  const folderTabs = panel.querySelector('#folder-tabs');
-  if (!folderTabs) return;
-
-  folderTabs.innerHTML = folders
-    .map(
-      folder => `
-      <button
-        class="folder-tab ${folder.id === panelState.currentFolderId ? 'active' : ''}"
-        data-folder-id="${folder.id}"
-      >
-        ${escapeHtml(folder.name)}
-      </button>
-    `
-    )
-    .join('');
-
-  // フォルダタブのクリックイベント
-  folderTabs.querySelectorAll('.folder-tab').forEach(tab => {
-    tab.addEventListener('click', async (e) => {
-      const folderId = (e.target as HTMLElement).getAttribute('data-folder-id');
-      if (folderId) {
-        await selectFolder(folderId);
-      }
-    });
-  });
-}
-
-async function selectFolder(folderId: string) {
-  panelState.currentFolderId = folderId;
-
-  // メモ一覧を更新
-  const notesResponse = await chrome.runtime.sendMessage({
-    type: MessageType.GET_NOTES_IN_FOLDER,
-    folderId
-  });
-
-  if (notesResponse.success) {
-    notes = notesResponse.data;
-    renderNoteList();
-    renderFolders(); // アクティブ状態を更新
-  }
-}
-
-function renderNoteList() {
-  if (!panel) return;
-
-  const noteList = panel.querySelector('#note-list');
-  if (!noteList) return;
-
-  if (notes.length === 0) {
-    noteList.innerHTML = '<div class="empty-message">メモがありません</div>';
-    return;
-  }
-
-  noteList.innerHTML = notes
-    .map(
-      note => `
-      <div class="note-item" data-note-id="${note.id}">
-        <div class="note-item-title">${escapeHtml(note.title)}</div>
-        <div class="note-item-preview">${escapeHtml(note.content.substring(0, 50))}${note.content.length > 50 ? '...' : ''}</div>
-      </div>
-    `
-    )
-    .join('');
-
-  // メモアイテムのクリックイベント
-  noteList.querySelectorAll('.note-item').forEach(item => {
-    item.addEventListener('click', async (e) => {
-      const noteId = (e.currentTarget as HTMLElement).getAttribute('data-note-id');
-      if (noteId) {
-        await openNote(noteId);
-      }
-    });
-  });
-}
-
-// ========================================
-// メモ操作
-// ========================================
-
-async function openNote(noteId: string) {
-  if (!panel) return;
-
-  // メモを開いた記録を更新
-  await chrome.runtime.sendMessage({
-    type: MessageType.OPEN_NOTE,
-    noteId
-  });
-
-  // メモを取得
-  const response = await chrome.runtime.sendMessage({
-    type: MessageType.GET_NOTE,
-    noteId
-  });
-
-  if (response.success && response.data) {
-    const note: Note = response.data;
-    currentEditingNoteId = noteId;
-
-    // メモエディタを表示
-    const noteEditor = panel.querySelector('#note-editor') as HTMLElement;
-    const noteTitleInput = panel.querySelector('#note-title-input') as HTMLInputElement;
-    const noteContentTextarea = panel.querySelector('#note-content-textarea') as HTMLTextAreaElement;
-
-    if (noteEditor && noteTitleInput && noteContentTextarea) {
-      noteEditor.style.display = 'block';
-      noteTitleInput.value = note.title;
-      noteContentTextarea.value = note.content;
-
-      // 本文末尾にフォーカス
-      noteContentTextarea.focus();
-      noteContentTextarea.setSelectionRange(note.content.length, note.content.length);
-    }
-  }
-}
-
-function closeNoteEditor() {
-  if (!panel) return;
-
-  const noteEditor = panel.querySelector('#note-editor') as HTMLElement;
-  if (noteEditor) {
-    noteEditor.style.display = 'none';
-  }
-
-  currentEditingNoteId = null;
-
-  // 空メモの削除タイマーをクリア
-  if (emptyNoteDeleteTimer) {
-    clearTimeout(emptyNoteDeleteTimer);
-    emptyNoteDeleteTimer = null;
-  }
-}
-
-// ========================================
-// 入力ハンドラ
-// ========================================
-
-function handleQuickMemoInput(e: Event) {
-  const textarea = e.target as HTMLTextAreaElement;
-  const content = textarea.value;
-
-  // デバウンスして保存
-  if (autosaveTimer) {
-    clearTimeout(autosaveTimer);
-  }
-
-  autosaveTimer = window.setTimeout(async () => {
-    quickMemo.content = content;
-    quickMemo.updatedAt = Date.now();
-
-    // Backgroundに保存を依頼
-    await chrome.runtime.sendMessage({
-      type: MessageType.UPDATE_QUICK_MEMO,
-      content
-    });
-  }, AUTOSAVE_DEBOUNCE_MS);
-}
-
-async function handleSaveQuickMemoAsNote() {
-  if (!quickMemo.content.trim()) {
-    alert('クイックメモが空です');
-    return;
-  }
-
-  const title = prompt('メモのタイトルを入力してください（省略可）:');
-  if (title === null) {
-    return; // キャンセル
-  }
-
-  try {
-    const response = await chrome.runtime.sendMessage({
-      type: MessageType.SAVE_QUICK_MEMO_AS_NOTE,
-      folderId: panelState.currentFolderId || INBOX_FOLDER_ID,
-      title: title || undefined
-    });
-
-    if (response.success) {
-      alert('メモを保存しました');
-      // メモ一覧を更新
-      await loadData();
-      renderNoteList();
-    } else {
-      alert(`エラー: ${response.error}`);
-    }
-  } catch (error) {
-    console.error('[Content] Error saving quick memo as note:', error);
-    alert('保存中にエラーが発生しました');
-  }
-}
-
-function handleNoteTitleInput(e: Event) {
-  if (!currentEditingNoteId) return;
-
-  const input = e.target as HTMLInputElement;
-  const title = input.value;
-
-  // デバウンスして保存
-  if (autosaveTimer) {
-    clearTimeout(autosaveTimer);
-  }
-
-  autosaveTimer = window.setTimeout(async () => {
-    await chrome.runtime.sendMessage({
-      type: MessageType.UPDATE_NOTE,
-      noteId: currentEditingNoteId,
-      title
-    });
-
-    // メモ一覧を更新
-    await loadData();
-    renderNoteList();
-  }, AUTOSAVE_DEBOUNCE_MS);
-}
-
-function handleNoteContentInput(e: Event) {
-  if (!currentEditingNoteId) return;
-
-  const textarea = e.target as HTMLTextAreaElement;
-  const content = textarea.value;
-
-  // デバウンスして保存
-  if (autosaveTimer) {
-    clearTimeout(autosaveTimer);
-  }
-
-  autosaveTimer = window.setTimeout(async () => {
-    await chrome.runtime.sendMessage({
-      type: MessageType.UPDATE_NOTE,
-      noteId: currentEditingNoteId,
-      content
-    });
-
-    // メモ一覧を更新
-    await loadData();
-    renderNoteList();
-  }, AUTOSAVE_DEBOUNCE_MS);
-}
-
-async function handleSearch(e: Event) {
-  const input = e.target as HTMLInputElement;
-  const query = input.value;
-
-  panelState.searchQuery = query;
-
-  if (!query.trim()) {
-    // 検索クエリが空の場合は通常のメモ一覧を表示
-    await loadData();
-    renderNoteList();
-    return;
-  }
-
-  // 検索を実行
-  const response = await chrome.runtime.sendMessage({
-    type: MessageType.SEARCH_NOTES,
-    query,
-    folderId: panelState.currentFolderId
-  });
-
-  if (response.success) {
-    notes = response.data;
-    renderNoteList();
-  }
-}
-
-// ========================================
-// ツールバーハンドラー
-// ========================================
-
-async function handleCreateNote() {
-  if (!panelState.currentFolderId) {
-    alert('フォルダを選択してください');
-    return;
-  }
-
-  const title = prompt('メモのタイトルを入力してください（省略可）:');
-  if (title === null) return; // キャンセル
-
-  try {
-    const response = await chrome.runtime.sendMessage({
-      type: MessageType.CREATE_NOTE,
-      folderId: panelState.currentFolderId,
-      title: title || undefined
-    });
-
-    if (response.success) {
-      const note = response.data;
-      await loadData();
-      renderNoteList();
-      await openNote(note.id);
-    } else {
-      alert(`エラー: ${response.error}`);
-    }
-  } catch (error) {
-    console.error('[Content] Error creating note:', error);
-    alert('メモの作成中にエラーが発生しました');
-  }
-}
-
-async function handleCreateFolder() {
-  const name = prompt('フォルダ名を入力してください:');
-  if (!name) return;
-
-  try {
-    const response = await chrome.runtime.sendMessage({
-      type: MessageType.CREATE_FOLDER,
-      name
-    });
-
-    if (response.success) {
-      await loadData();
-      renderFolders();
-    } else {
-      alert(`エラー: ${response.error}`);
-    }
-  } catch (error) {
-    console.error('[Content] Error creating folder:', error);
-    alert('フォルダの作成中にエラーが発生しました');
-  }
-}
-
-async function handleRenameCurrentFolder() {
-  if (!panelState.currentFolderId) {
-    alert('フォルダを選択してください');
-    return;
-  }
-
-  const folder = folders.find(f => f.id === panelState.currentFolderId);
-  if (!folder) return;
-
-  if (folder.isSystem) {
-    alert('システムフォルダはリネームできません');
-    return;
-  }
-
-  const newName = prompt('新しいフォルダ名を入力してください:', folder.name);
-  if (!newName) return;
-
-  try {
-    const response = await chrome.runtime.sendMessage({
-      type: MessageType.RENAME_FOLDER,
-      folderId: folder.id,
-      newName
-    });
-
-    if (response.success) {
-      await loadData();
-      renderFolders();
-    } else {
-      alert(`エラー: ${response.error}`);
-    }
-  } catch (error) {
-    console.error('[Content] Error renaming folder:', error);
-    alert('フォルダのリネーム中にエラーが発生しました');
-  }
-}
-
-async function handleDeleteCurrentFolder() {
-  if (!panelState.currentFolderId) {
-    alert('フォルダを選択してください');
-    return;
-  }
-
-  const folder = folders.find(f => f.id === panelState.currentFolderId);
-  if (!folder) return;
-
-  if (folder.isSystem) {
-    alert('システムフォルダは削除できません');
-    return;
-  }
-
-  if (!confirm(`フォルダ「${folder.name}」とその中のメモをすべて削除しますか?`)) {
-    return;
-  }
-
-  try {
-    const response = await chrome.runtime.sendMessage({
-      type: MessageType.DELETE_FOLDER,
-      folderId: folder.id
-    });
-
-    if (response.success) {
-      panelState.currentFolderId = INBOX_FOLDER_ID;
-      await loadData();
-      renderFolders();
-      renderNoteList();
-    } else {
-      alert(`エラー: ${response.error}`);
-    }
-  } catch (error) {
-    console.error('[Content] Error deleting folder:', error);
-    alert('フォルダの削除中にエラーが発生しました');
-  }
-}
-
-async function handleDeleteCurrentNote() {
-  if (!currentEditingNoteId) {
-    alert('メモを開いてください');
-    return;
-  }
-
-  const note = notes.find(n => n.id === currentEditingNoteId);
-  if (!note) return;
-
-  if (!confirm(`メモ「${note.title}」を削除しますか?`)) {
-    return;
-  }
-
-  try {
-    const response = await chrome.runtime.sendMessage({
-      type: MessageType.DELETE_NOTE,
-      noteId: currentEditingNoteId
-    });
-
-    if (response.success) {
-      closeNoteEditor();
-      await loadData();
-      renderNoteList();
-    } else {
-      alert(`エラー: ${response.error}`);
-    }
-  } catch (error) {
-    console.error('[Content] Error deleting note:', error);
-    alert('メモの削除中にエラーが発生しました');
-  }
-}
-
 // ========================================
 // 入力・保存ハンドラー
 // ========================================
@@ -1085,20 +678,7 @@ async function handleNewNote() {
 
     if (response.success && response.data) {
       const note: Note = response.data;
-      currentMode = 'note';
-      currentEditingNoteId = note.id;
-      currentNoteTitle = note.title;
-      hasUnsavedChanges = false;
-      panelState.currentFolderId = folderId;
-
-      const textarea = panel?.querySelector('#memo-textarea') as HTMLTextAreaElement;
-      if (textarea) {
-        textarea.value = note.content || '';
-        textarea.placeholder = 'ここにメモを入力...（保存ボタンで保存してください）';
-      }
-
-      renderMemo();
-      focusMemoTextarea();
+      switchToNoteMode(note);
       return;
     }
 
@@ -1157,7 +737,7 @@ async function handleConfirmSave() {
     });
 
     if (response.success) {
-      const note = response.data;
+      const note: Note = response.data;
 
       // 保存したメモの内容を更新
       await chrome.runtime.sendMessage({
@@ -1166,13 +746,7 @@ async function handleConfirmSave() {
         content
       });
 
-      // 通常メモモードに切り替え
-      currentMode = 'note';
-      currentEditingNoteId = note.id;
-      currentNoteTitle = note.title;
-      hasUnsavedChanges = false;
-
-      renderMemo();
+      switchToNoteMode(note, content);
       closeSaveModal();
       alert('メモを保存しました');
     } else {
@@ -1387,20 +961,7 @@ async function loadNoteFromFile(noteId: string) {
     if (response.success && response.data) {
       const note: Note = response.data;
 
-      // 通常メモモードに切り替え
-      currentMode = 'note';
-      currentEditingNoteId = noteId;
-      currentNoteTitle = note.title;
-      hasUnsavedChanges = false;
-
-      const textarea = panel?.querySelector('#memo-textarea') as HTMLTextAreaElement;
-      if (textarea) {
-        textarea.value = note.content;
-        textarea.placeholder = 'ここにメモを入力...（保存ボタンで保存してください）';
-      }
-
-      renderMemo();
-      focusMemoTextarea();
+      switchToNoteMode(note);
     }
   } catch (error) {
     console.error('[Content] Error loading note:', error);
@@ -1455,17 +1016,7 @@ async function handleDeleteNote(noteId: string, folderId: string) {
       renderFileList(folderId);
       // 現在編集中のメモを削除した場合、クイックメモモードに戻る
       if (currentEditingNoteId === noteId) {
-        currentMode = 'quick';
-        currentEditingNoteId = null;
-        currentNoteTitle = '';
-        hasUnsavedChanges = false;
-
-        const textarea = panel?.querySelector('#memo-textarea') as HTMLTextAreaElement;
-        if (textarea) {
-          textarea.value = quickMemo.content;
-          textarea.placeholder = 'ここにメモを入力...（クイックメモは自動保存されます）';
-        }
-        renderMemo();
+        switchToQuickMode();
       }
     } else {
       alert(`エラー: ${response.error}`);
