@@ -306,6 +306,22 @@ function setupEventListeners() {
   // メモテキストエリアの入力
   const memoTextarea = panel.querySelector('#memo-textarea') as HTMLTextAreaElement;
   memoTextarea?.addEventListener('input', handleMemoInput);
+  memoTextarea?.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (e.key === 'Enter' && e.defaultPrevented && !e.isComposing) {
+      const textarea = e.currentTarget as HTMLTextAreaElement;
+      const start = textarea.selectionStart ?? textarea.value.length;
+      const end = textarea.selectionEnd ?? textarea.value.length;
+      const nextValue = textarea.value.slice(0, start) + '\n' + textarea.value.slice(end);
+      textarea.value = nextValue;
+      const nextPos = start + 1;
+      textarea.setSelectionRange(nextPos, nextPos);
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    e.stopPropagation();
+  });
+  memoTextarea?.addEventListener('keyup', (e: KeyboardEvent) => {
+    e.stopPropagation();
+  });
 }
 
 // ========================================
