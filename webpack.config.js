@@ -1,7 +1,7 @@
 const path = require('path');
 const CopyPlugin = require('copy-webpack-plugin');
 
-module.exports = {
+module.exports = (env, argv) => ({
   entry: {
     background: './src/background/background.ts',
     content: './src/content/content.ts',
@@ -38,5 +38,6 @@ module.exports = {
         { from: 'src/styles/panel.css', to: 'panel.css' }
       ]
     })
-  ]
-};
+  ],
+  devtool: argv.mode === 'development' ? 'source-map' : false
+});

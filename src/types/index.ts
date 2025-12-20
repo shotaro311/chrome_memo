@@ -38,7 +38,7 @@ export interface NoteMetadata {
 }
 
 /**
- * 固定クイックメモ
+ * 下書きメモ
  */
 export interface QuickMemo {
   content: string;
@@ -87,6 +87,11 @@ export interface PanelState {
   currentFolderId: string | null; // 現在選択中のフォルダ
   currentNoteId: string | null; // 現在開いているメモ
   searchQuery: string;
+  openTabs: string[]; // 開いているタブ（順序保持）
+  activeTabId: string | null; // 左側のアクティブタブ
+  splitEnabled: boolean;
+  rightTabId: string | null; // 右側のタブ
+  lastFocusedPane: 'left' | 'right';
 }
 
 // ========================================
@@ -108,8 +113,6 @@ export enum MessageType {
   AUTH_GET_STATE = 'AUTH_GET_STATE',
   AUTH_SYNC_NOW = 'AUTH_SYNC_NOW',
 
-  // クイックメモ追記
-  QUICK_APPEND = 'QUICK_APPEND',
   UPDATE_QUICK_MEMO = 'UPDATE_QUICK_MEMO',
 
   // フォルダ操作
@@ -189,15 +192,7 @@ export interface AuthSyncNowMessage extends BaseMessage {
 }
 
 /**
- * クイックメモ追記メッセージ
- */
-export interface QuickAppendMessage extends BaseMessage {
-  type: MessageType.QUICK_APPEND;
-  text: string;
-}
-
-/**
- * クイックメモ更新メッセージ
+ * 下書きメモ更新メッセージ
  */
 export interface UpdateQuickMemoMessage extends BaseMessage {
   type: MessageType.UPDATE_QUICK_MEMO;
@@ -265,7 +260,7 @@ export interface OpenNoteMessage extends BaseMessage {
 }
 
 /**
- * クイックメモを通常メモとして保存
+ * 下書きメモを通常メモとして保存
  */
 export interface SaveQuickMemoAsNoteMessage extends BaseMessage {
   type: MessageType.SAVE_QUICK_MEMO_AS_NOTE;
@@ -297,7 +292,7 @@ export interface GetNoteMessage extends BaseMessage {
 }
 
 /**
- * クイックメモ取得メッセージ
+ * 下書きメモ取得メッセージ
  */
 export interface GetQuickMemoMessage extends BaseMessage {
   type: MessageType.GET_QUICK_MEMO;
@@ -337,7 +332,6 @@ export type Message =
   | AuthSignOutMessage
   | AuthGetStateMessage
   | AuthSyncNowMessage
-  | QuickAppendMessage
   | UpdateQuickMemoMessage
   | CreateFolderMessage
   | DeleteFolderMessage

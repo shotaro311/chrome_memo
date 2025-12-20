@@ -81,7 +81,7 @@ export async function uploadMemo(note: Note): Promise<{ success: boolean; error?
 }
 
 /**
- * クイックメモをSupabaseにアップロード
+ * 下書きメモをSupabaseにアップロード
  */
 export async function uploadQuickMemo(quickMemo: QuickMemo): Promise<{ success: boolean; error?: string }> {
   const authState = await getAuthState();
@@ -184,7 +184,7 @@ export async function downloadMemos(): Promise<{ success: boolean; data?: Note[]
 }
 
 /**
- * Supabaseからクイックメモをダウンロード
+ * Supabaseから下書きメモをダウンロード
  */
 export async function downloadQuickMemo(): Promise<{ success: boolean; data?: QuickMemo; error?: string }> {
   const authState = await getAuthState();
@@ -200,7 +200,7 @@ export async function downloadQuickMemo(): Promise<{ success: boolean; data?: Qu
       .single();
 
     if (error) {
-      // レコードが存在しない場合は空のクイックメモを返す
+    // レコードが存在しない場合は空の下書きメモを返す
       if (error.code === 'PGRST116') {
         return { success: true, data: { content: '', updatedAt: Date.now() } };
       }
@@ -310,7 +310,7 @@ export async function fullSync(): Promise<{ success: boolean; error?: string }> 
       await uploadMemo(note);
     }
 
-    // クイックメモをアップロード
+    // 下書きメモをアップロード
     const quickMemo = localData.quickMemo || { content: '', updatedAt: Date.now() };
     await uploadQuickMemo(quickMemo);
 

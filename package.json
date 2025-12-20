@@ -1,7 +1,7 @@
 {
   "name": "chrome-memo-extension",
   "version": "1.0.0",
-  "description": "Chrome拡張メモアプリ - フォルダ分けされたメモと固定クイックメモ",
+  "description": "Chrome拡張メモアプリ - フォルダ分けされたメモと下書きメモ",
   "private": true,
   "scripts": {
     "build": "webpack --mode production",

@@ -20,23 +20,36 @@ let panelState: PanelState = {
   height: LIMITS.DEFAULT_PANEL_HEIGHT,
   currentFolderId: INBOX_FOLDER_ID,
   currentNoteId: null,
-  searchQuery: ''
+  searchQuery: '',
+  openTabs: [],
+  activeTabId: null,
+  splitEnabled: false,
+  rightTabId: null,
+  lastFocusedPane: 'left'
 };
 
 let folders: Folder[] = [];
-let quickMemo: QuickMemo = { content: '', updatedAt: Date.now() };
+let draftMemo: QuickMemo = { content: '', updatedAt: Date.now() };
 
 let autosaveTimer: number | null = null;
-let currentEditingNoteId: string | null = null;
 
-// モード管理: 'quick' = クイックメモモード, 'note' = 通常メモモード
-let currentMode: 'quick' | 'note' = 'quick';
-let currentNoteTitle: string = '';
-let hasUnsavedChanges: boolean = false;
+type TabKind = 'draft' | 'note';
+type Pane = 'left' | 'right';
 
-const QUICK_MEMO_LABEL = 'クイックメモ';
-const QUICK_MEMO_PLACEHOLDER = 'ここにメモを入力...（クイックメモは自動保存されます）';
+interface TabInfo {
+  id: string;
+  kind: TabKind;
+  title: string;
+}
+
+const DRAFT_TAB_ID = '__draft__';
+const DRAFT_TAB_LABEL = '下書き';
+const DRAFT_PLACEHOLDER = 'ここにメモを入力...（下書きは自動保存されます）';
 const NOTE_PLACEHOLDER = 'ここにメモを入力...（保存ボタンで保存してください）';
+
+const tabInfoMap: Record<string, TabInfo> = {};
+const tabContentCache: Record<string, string> = {};
+const tabUnsavedMap: Record<string, boolean> = {};
 
 // ========================================
 // 初期化
@@ -104,9 +117,11 @@ async function openPanel(noteId?: string) {
     // データを読み込む
     await loadData();
     await refreshAuthButton();
-
-    // クイックメモモードで開く
-    switchToQuickMode();
+    initializeTabsIfNeeded();
+    if (noteId) {
+      await loadNoteFromFile(noteId);
+    }
+    renderAll();
   }
 }
 
@@ -115,6 +130,7 @@ function closePanel() {
     panel.classList.add('is-hidden');
     panel.style.removeProperty('display');
     panelState.isVisible = false;
+    flushDraftSave();
   }
 }
 
@@ -145,6 +161,7 @@ function createPanel() {
         <button class="header-btn" id="save-as-btn" title="名前を付けて保存">💾</button>
         <button class="header-btn" id="save-btn" title="上書き保存" style="display: none;">📥</button>
         <button class="header-btn" id="open-file-btn" title="ファイルを開く">📂</button>
+        <button class="header-btn" id="split-view-btn" title="スプリットビュー">⇔</button>
         <button class="header-btn" id="auth-btn" title="同期 / サインイン">👤</button>
         <span class="memo-current-label" id="memo-current-label"></span>
       </div>
@@ -152,12 +169,28 @@ function createPanel() {
     </div>
 
     <div class="panel-content">
+      <!-- タブバー -->
+      <div class="tab-bar">
+        <div class="tab-list" id="tab-list"></div>
+      </div>
+
       <!-- メモテキストエリア -->
-      <textarea
-        class="memo-textarea"
-        id="memo-textarea"
-        placeholder="ここにメモを入力...（クイックメモは自動保存されます）"
-      ></textarea>
+      <div class="memo-split" id="memo-split">
+        <div class="memo-pane left" data-pane="left">
+          <textarea
+            class="memo-textarea"
+            id="memo-textarea-left"
+            placeholder="${DRAFT_PLACEHOLDER}"
+          ></textarea>
+        </div>
+        <div class="memo-pane right" data-pane="right">
+          <textarea
+            class="memo-textarea"
+            id="memo-textarea-right"
+            placeholder="${DRAFT_PLACEHOLDER}"
+          ></textarea>
+        </div>
+      </div>
     </div>
 
     <!-- ファイル選択モーダル -->
@@ -226,6 +259,27 @@ function createPanel() {
       </div>
     </div>
 
+    <!-- スプリット選択モーダル -->
+    <div class="split-modal" id="split-modal" style="display: none;">
+      <div class="split-modal-content">
+        <div class="split-modal-header">
+          <h3>右側に表示するメモを選択</h3>
+          <button class="close-modal-btn" id="close-split-modal-btn">×</button>
+        </div>
+        <div class="split-modal-body">
+          <div class="split-section">
+            <div class="split-section-title">開いているメモ</div>
+            <div class="split-tab-list" id="split-tab-list"></div>
+          </div>
+          <div class="split-section">
+            <div class="split-section-title">フォルダのメモ</div>
+            <div class="folder-tabs" id="split-folder-tabs"></div>
+            <div class="file-list" id="split-file-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- リサイズハンドル -->
     <div class="resize-handle" id="resize-handle"></div>
   `;
@@ -270,6 +324,9 @@ function setupEventListeners() {
       case 'open-file-btn':
         handleOpenFile();
         break;
+      case 'split-view-btn':
+        void handleSplitViewToggle();
+        break;
       case 'auth-btn':
         openAuthModal();
         break;
@@ -284,6 +341,10 @@ function setupEventListeners() {
       case 'close-auth-modal-btn':
         e.stopPropagation();
         closeAuthModal();
+        break;
+      case 'close-split-modal-btn':
+        e.stopPropagation();
+        closeSplitModal();
         break;
       case 'confirm-save-btn':
         handleConfirmSave();
@@ -304,22 +365,41 @@ function setupEventListeners() {
   });
 
   // メモテキストエリアの入力
-  const memoTextarea = panel.querySelector('#memo-textarea') as HTMLTextAreaElement;
-  memoTextarea?.addEventListener('input', handleMemoInput);
-  memoTextarea?.addEventListener('keydown', (e: KeyboardEvent) => {
+  const memoTextareaLeft = panel.querySelector('#memo-textarea-left') as HTMLTextAreaElement;
+  const memoTextareaRight = panel.querySelector('#memo-textarea-right') as HTMLTextAreaElement;
+  setupTextareaEvents(memoTextareaLeft, 'left');
+  setupTextareaEvents(memoTextareaRight, 'right');
+
+  const tabList = panel.querySelector('#tab-list') as HTMLElement | null;
+  tabList?.addEventListener('wheel', (e: WheelEvent) => {
+    if (e.deltaY === 0) return;
+    tabList.scrollLeft += e.deltaY;
+    e.preventDefault();
+  }, { passive: false });
+}
+
+function setupTextareaEvents(textarea: HTMLTextAreaElement | null, pane: Pane) {
+  if (!textarea) return;
+
+  textarea.addEventListener('input', (e) => handleMemoInput(e, pane));
+  textarea.addEventListener('focus', () => {
+    panelState.lastFocusedPane = pane;
+    updateHeaderState();
+  });
+  textarea.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key === 'Enter' && e.defaultPrevented && !e.isComposing) {
-      const textarea = e.currentTarget as HTMLTextAreaElement;
-      const start = textarea.selectionStart ?? textarea.value.length;
-      const end = textarea.selectionEnd ?? textarea.value.length;
-      const nextValue = textarea.value.slice(0, start) + '\n' + textarea.value.slice(end);
-      textarea.value = nextValue;
+      const current = e.currentTarget as HTMLTextAreaElement;
+      const start = current.selectionStart ?? current.value.length;
+      const end = current.selectionEnd ?? current.value.length;
+      const nextValue = current.value.slice(0, start) + '\n' + current.value.slice(end);
+      current.value = nextValue;
       const nextPos = start + 1;
-      textarea.setSelectionRange(nextPos, nextPos);
-      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      current.setSelectionRange(nextPos, nextPos);
+      current.dispatchEvent(new Event('input', { bubbles: true }));
     }
     e.stopPropagation();
   });
-  memoTextarea?.addEventListener('keyup', (e: KeyboardEvent) => {
+  textarea.addEventListener('keyup', (e: KeyboardEvent) => {
     e.stopPropagation();
   });
 }
@@ -381,12 +461,15 @@ function setupResize() {
 
 async function loadData() {
   try {
-    // クイックメモを取得
+    // 下書きメモを取得
     const quickMemoResponse = await chrome.runtime.sendMessage({
       type: MessageType.GET_QUICK_MEMO
     });
     if (quickMemoResponse.success) {
-      quickMemo = quickMemoResponse.data;
+      draftMemo = quickMemoResponse.data;
+      if (panelState.openTabs.includes(DRAFT_TAB_ID)) {
+        tabContentCache[DRAFT_TAB_ID] = draftMemo.content || '';
+      }
     }
 
     // フォルダ一覧を取得
@@ -405,70 +488,266 @@ async function loadData() {
 // レンダリング
 // ========================================
 
-function renderMemo() {
+function renderAll() {
+  renderTabs();
+  renderPanes();
+  updateHeaderState();
+}
+
+function renderTabs() {
   if (!panel) return;
 
-  const textarea = panel.querySelector('#memo-textarea') as HTMLTextAreaElement;
-  const titleElement = panel.querySelector('#memo-title') as HTMLElement;
-  const currentLabel = panel.querySelector('#memo-current-label') as HTMLElement;
-  const saveBtn = panel.querySelector('#save-btn') as HTMLButtonElement;
+  const tabList = panel.querySelector('#tab-list') as HTMLElement | null;
+  if (!tabList) return;
+
+  tabList.innerHTML = panelState.openTabs
+    .map(tabId => {
+      if (tabId === DRAFT_TAB_ID && !tabInfoMap[DRAFT_TAB_ID]) {
+        tabInfoMap[DRAFT_TAB_ID] = {
+          id: DRAFT_TAB_ID,
+          kind: 'draft',
+          title: DRAFT_TAB_LABEL
+        };
+      }
+      const tab = tabInfoMap[tabId];
+      if (!tab) return '';
+      const title = tab.kind === 'draft' ? DRAFT_TAB_LABEL : (tab.title || '無題のメモ');
+      const isActive = tabId === panelState.activeTabId;
+      return `
+        <button class="tab-item ${isActive ? 'active' : ''}" data-tab-id="${tabId}">
+          <span class="tab-title">${escapeHtml(title)}</span>
+          <span class="tab-close" data-tab-id="${tabId}">×</span>
+        </button>
+      `;
+    })
+    .join('');
+
+  tabList.querySelectorAll('.tab-item').forEach(tabEl => {
+    tabEl.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      if (target.classList.contains('tab-close')) {
+        e.stopPropagation();
+        const tabId = target.getAttribute('data-tab-id');
+        if (tabId) {
+          closeTab(tabId);
+        }
+        return;
+      }
+
+      const tabId = (tabEl as HTMLElement).getAttribute('data-tab-id');
+      if (tabId) {
+        setActiveTab(tabId);
+      }
+    });
+  });
+}
+
+function renderPanes() {
+  if (!panel) return;
+
+  panel.classList.toggle('is-split', panelState.splitEnabled);
+  renderPane('left');
+  renderPane('right');
+}
+
+function renderPane(pane: Pane) {
+  if (!panel) return;
+
+  const paneTabId = getPaneTabId(pane);
+  const textarea = panel.querySelector(`#memo-textarea-${pane}`) as HTMLTextAreaElement | null;
+  const paneContainer = panel.querySelector(`.memo-pane.${pane}`) as HTMLElement | null;
+
+  if (!textarea || !paneContainer) return;
+
+  if (!paneTabId) {
+    textarea.value = '';
+    textarea.placeholder = '';
+    paneContainer.style.display = 'none';
+    return;
+  }
+
+  paneContainer.style.display = 'flex';
+  textarea.value = getTabContent(paneTabId);
+  textarea.placeholder = getTabPlaceholder(paneTabId);
+}
+
+function updateHeaderState() {
+  if (!panel) return;
+
+  const titleElement = panel.querySelector('#memo-title') as HTMLElement | null;
+  const currentLabel = panel.querySelector('#memo-current-label') as HTMLElement | null;
+  const saveBtn = panel.querySelector('#save-btn') as HTMLButtonElement | null;
 
   if (titleElement) {
     titleElement.textContent = 'メモ';
   }
 
-  if (currentMode === 'quick') {
-    // クイックメモモード
-    if (textarea) {
-      textarea.value = quickMemo.content;
-      textarea.placeholder = QUICK_MEMO_PLACEHOLDER;
+  const leftTabId = panelState.activeTabId;
+  const rightTabId = panelState.splitEnabled ? panelState.rightTabId : null;
+  const leftLabel = leftTabId ? getTabTitle(leftTabId) : '';
+  const rightLabel = rightTabId ? getTabTitle(rightTabId) : '';
+
+  if (currentLabel) {
+    if (panelState.splitEnabled && rightLabel) {
+      currentLabel.textContent = `左: ${leftLabel} / 右: ${rightLabel}`;
+      currentLabel.title = currentLabel.textContent;
+    } else {
+      currentLabel.textContent = leftLabel;
+      currentLabel.title = leftLabel;
     }
-    if (currentLabel) {
-      currentLabel.textContent = QUICK_MEMO_LABEL;
-      currentLabel.title = QUICK_MEMO_LABEL;
-    }
-    if (saveBtn) {
-      saveBtn.style.display = 'none';
+  }
+
+  let focusedTab = getFocusedTabInfo();
+  if (!focusedTab && panelState.activeTabId) {
+    panelState.lastFocusedPane = 'left';
+    focusedTab = getFocusedTabInfo();
+  }
+  if (saveBtn) {
+    saveBtn.style.display = focusedTab?.kind === 'note' ? 'inline-flex' : 'none';
+  }
+}
+
+function initializeTabsIfNeeded() {
+  if (panelState.openTabs.length === 0) {
+    openDraftTab();
+    return;
+  }
+
+  if (!panelState.activeTabId) {
+    panelState.activeTabId = panelState.openTabs[0] || null;
+  }
+  if (panelState.activeTabId && !panelState.openTabs.includes(panelState.activeTabId)) {
+    panelState.activeTabId = panelState.openTabs[0] || null;
+  }
+
+  const missingDraft = panelState.openTabs.includes(DRAFT_TAB_ID) && !tabInfoMap[DRAFT_TAB_ID];
+  if (missingDraft) {
+    tabInfoMap[DRAFT_TAB_ID] = {
+      id: DRAFT_TAB_ID,
+      kind: 'draft',
+      title: DRAFT_TAB_LABEL
+    };
+  }
+}
+
+function openDraftTab() {
+  if (!tabInfoMap[DRAFT_TAB_ID]) {
+    tabInfoMap[DRAFT_TAB_ID] = {
+      id: DRAFT_TAB_ID,
+      kind: 'draft',
+      title: DRAFT_TAB_LABEL
+    };
+  }
+
+  if (!panelState.openTabs.includes(DRAFT_TAB_ID)) {
+    panelState.openTabs.push(DRAFT_TAB_ID);
+  }
+
+  tabContentCache[DRAFT_TAB_ID] = draftMemo.content || '';
+  setActiveTab(DRAFT_TAB_ID);
+}
+
+function openNoteTab(
+  note: Note,
+  contentOverride?: string,
+  options?: { activate?: boolean }
+) {
+  const exists = panelState.openTabs.includes(note.id);
+  tabInfoMap[note.id] = {
+    id: note.id,
+    kind: 'note',
+    title: note.title
+  };
+
+  tabContentCache[note.id] = contentOverride ?? note.content;
+  tabUnsavedMap[note.id] = false;
+
+  if (!exists) {
+    panelState.openTabs.push(note.id);
+  }
+
+  panelState.currentFolderId = note.folderId;
+  if (options?.activate === false) {
+    renderAll();
+    return;
+  }
+  setActiveTab(note.id);
+}
+
+function closeTab(tabId: string) {
+  const index = panelState.openTabs.indexOf(tabId);
+  if (index === -1) return;
+
+  panelState.openTabs.splice(index, 1);
+
+  if (tabId !== DRAFT_TAB_ID) {
+    delete tabInfoMap[tabId];
+    delete tabContentCache[tabId];
+    delete tabUnsavedMap[tabId];
+  }
+
+  if (panelState.splitEnabled && panelState.rightTabId === tabId) {
+    panelState.splitEnabled = false;
+    panelState.rightTabId = null;
+  }
+
+  if (panelState.activeTabId === tabId) {
+    const nextTabId = panelState.openTabs[index] || panelState.openTabs[index - 1] || null;
+    if (nextTabId) {
+      setActiveTab(nextTabId);
+    } else {
+      openDraftTab();
     }
   } else {
-    // 通常メモモード
-    if (textarea) {
-      textarea.placeholder = NOTE_PLACEHOLDER;
-    }
-    if (currentLabel) {
-      const label = currentNoteTitle || '無題のメモ';
-      currentLabel.textContent = label;
-      currentLabel.title = label;
-    }
-    if (saveBtn) {
-      saveBtn.style.display = 'inline-flex';
-    }
+    renderAll();
   }
 }
 
-function switchToQuickMode() {
-  currentMode = 'quick';
-  currentEditingNoteId = null;
-  currentNoteTitle = '';
-  hasUnsavedChanges = false;
-  renderMemo();
-  focusMemoTextarea();
+function setActiveTab(tabId: string) {
+  if (!panelState.openTabs.includes(tabId)) return;
+  panelState.activeTabId = tabId;
+  panelState.lastFocusedPane = 'left';
+  renderAll();
+  focusMemoTextarea('left');
 }
 
-function switchToNoteMode(note: Note, contentOverride?: string) {
-  currentMode = 'note';
-  currentEditingNoteId = note.id;
-  currentNoteTitle = note.title;
-  hasUnsavedChanges = false;
-  panelState.currentFolderId = note.folderId;
+function setRightTab(tabId: string) {
+  if (!panelState.openTabs.includes(tabId)) return;
+  panelState.rightTabId = tabId;
+  renderAll();
+}
 
-  const textarea = panel?.querySelector('#memo-textarea') as HTMLTextAreaElement;
-  if (textarea) {
-    textarea.value = contentOverride ?? note.content;
+function getFocusedTabInfo(): TabInfo | null {
+  const tabId = getPaneTabId(panelState.lastFocusedPane);
+  if (!tabId) return null;
+  return tabInfoMap[tabId] || null;
+}
+
+function getPaneTabId(pane: Pane): string | null {
+  if (pane === 'left') {
+    return panelState.activeTabId;
   }
+  if (!panelState.splitEnabled) return null;
+  return panelState.rightTabId;
+}
 
-  renderMemo();
-  focusMemoTextarea();
+function getTabTitle(tabId: string): string {
+  if (tabId === DRAFT_TAB_ID) return DRAFT_TAB_LABEL;
+  return tabInfoMap[tabId]?.title || '無題のメモ';
+}
+
+function getTabContent(tabId: string): string {
+  if (tabId === DRAFT_TAB_ID) {
+    return draftMemo.content || '';
+  }
+  return tabContentCache[tabId] ?? '';
+}
+
+function getTabPlaceholder(tabId: string): string {
+  if (tabId === DRAFT_TAB_ID) {
+    return DRAFT_PLACEHOLDER;
+  }
+  return NOTE_PLACEHOLDER;
 }
 
 function renderFileList(folderId: string) {
@@ -604,33 +883,37 @@ function renderSaveFolderSelect() {
 // 入力・保存ハンドラー
 // ========================================
 
-function handleMemoInput(e: Event) {
+function handleMemoInput(e: Event, pane: Pane) {
   const textarea = e.target as HTMLTextAreaElement;
   const content = textarea.value;
+  const tabId = getPaneTabId(pane);
+  if (!tabId) return;
 
-  if (currentMode === 'quick') {
-    // クイックメモモード：デバウンスして自動保存
+  if (tabId === DRAFT_TAB_ID) {
+    // 下書き：デバウンスして自動保存
+    draftMemo.content = content;
+    draftMemo.updatedAt = Date.now();
+    tabContentCache[DRAFT_TAB_ID] = content;
+
     if (autosaveTimer) {
       clearTimeout(autosaveTimer);
     }
 
     autosaveTimer = window.setTimeout(async () => {
-      quickMemo.content = content;
-      quickMemo.updatedAt = Date.now();
-
       await chrome.runtime.sendMessage({
         type: MessageType.UPDATE_QUICK_MEMO,
         content
       });
     }, AUTOSAVE_DEBOUNCE_MS);
   } else {
-    // 通常メモモード：未保存フラグを立てる
-    hasUnsavedChanges = true;
+    tabContentCache[tabId] = content;
+    tabUnsavedMap[tabId] = true;
   }
 }
 
 async function handleSaveAs() {
-  const textarea = panel?.querySelector('#memo-textarea') as HTMLTextAreaElement;
+  const pane = getFocusedPane();
+  const textarea = getTextarea(pane);
   if (!textarea) return;
 
   const content = textarea.value;
@@ -648,26 +931,31 @@ async function handleSaveAs() {
 }
 
 async function handleSave() {
-  if (currentMode !== 'note' || !currentEditingNoteId) {
+  const pane = getFocusedPane();
+  const tabId = getPaneTabId(pane);
+  if (!tabId || tabId === DRAFT_TAB_ID) {
     alert('保存するメモがありません');
     return;
   }
 
-  const textarea = panel?.querySelector('#memo-textarea') as HTMLTextAreaElement;
+  const textarea = getTextarea(pane);
   if (!textarea) return;
 
   const content = textarea.value;
+  const title = tabInfoMap[tabId]?.title ?? '';
 
   try {
     const response = await chrome.runtime.sendMessage({
       type: MessageType.UPDATE_NOTE,
-      noteId: currentEditingNoteId,
-      title: currentNoteTitle,
+      noteId: tabId,
+      title,
       content
     });
 
     if (response.success) {
-      hasUnsavedChanges = false;
+      tabUnsavedMap[tabId] = false;
+      tabContentCache[tabId] = content;
+      updateHeaderState();
       alert('上書き保存しました');
     } else {
       alert(`エラー: ${response.error}`);
@@ -679,37 +967,21 @@ async function handleSave() {
 }
 
 async function handleNewNote() {
-  if (currentMode === 'note' && hasUnsavedChanges) {
-    const ok = confirm('未保存の変更があります。保存せずに新規メモを作成しますか？');
+  const focusedTabId = getFocusedTabId();
+  if (focusedTabId && focusedTabId !== DRAFT_TAB_ID && tabUnsavedMap[focusedTabId]) {
+    const ok = confirm('未保存の変更があります。保存せずに下書きを開きますか？');
     if (!ok) return;
   }
 
-  const folderId = panelState.currentFolderId || INBOX_FOLDER_ID;
-
-  try {
-    const response = await chrome.runtime.sendMessage({
-      type: MessageType.CREATE_NOTE,
-      folderId
-    });
-
-    if (response.success && response.data) {
-      const note: Note = response.data;
-      switchToNoteMode(note);
-      return;
-    }
-
-    alert(`エラー: ${response.error || '新規メモの作成に失敗しました'}`);
-  } catch (error) {
-    console.error('[Content] Error creating note:', error);
-    alert('新規メモの作成中にエラーが発生しました');
-  }
+  openDraftTab();
 }
 
 async function handleConfirmSave() {
   const titleInput = panel?.querySelector('#save-title') as HTMLInputElement;
   const folderSelect = panel?.querySelector('#save-folder') as HTMLSelectElement;
   const newFolderInput = panel?.querySelector('#new-folder-name') as HTMLInputElement;
-  const textarea = panel?.querySelector('#memo-textarea') as HTMLTextAreaElement;
+  const pane = getFocusedPane();
+  const textarea = getTextarea(pane);
 
   if (!titleInput || !folderSelect || !textarea) return;
 
@@ -762,7 +1034,7 @@ async function handleConfirmSave() {
         content
       });
 
-      switchToNoteMode(note, content);
+      openNoteTab(note, content);
       closeSaveModal();
       alert('メモを保存しました');
     } else {
@@ -782,6 +1054,153 @@ async function handleOpenFile() {
   const fileModal = panel?.querySelector('#file-modal') as HTMLElement;
   if (fileModal) {
     fileModal.style.display = 'flex';
+  }
+}
+
+async function handleSplitViewToggle() {
+  if (panelState.splitEnabled) {
+    panelState.splitEnabled = false;
+    panelState.rightTabId = null;
+    renderAll();
+    return;
+  }
+  await loadData();
+  renderSplitTabList(panelState.openTabs.filter(tabId => tabId !== panelState.activeTabId));
+  renderSplitFolderTabs();
+  renderSplitFileList(panelState.currentFolderId || INBOX_FOLDER_ID);
+  openSplitModal();
+}
+
+function renderSplitTabList(tabIds: string[]) {
+  if (!panel) return;
+  const list = panel.querySelector('#split-tab-list') as HTMLElement | null;
+  if (!list) return;
+
+  if (tabIds.length === 0) {
+    list.innerHTML = '<div class="empty-message">開いているメモはありません</div>';
+    return;
+  }
+
+  list.innerHTML = tabIds
+    .map(tabId => {
+      const title = getTabTitle(tabId);
+      return `<button class="split-tab-item" data-tab-id="${tabId}">${escapeHtml(title)}</button>`;
+    })
+    .join('');
+
+  list.querySelectorAll('.split-tab-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const tabId = (item as HTMLElement).getAttribute('data-tab-id');
+      if (!tabId) return;
+      panelState.splitEnabled = true;
+      setRightTab(tabId);
+      closeSplitModal();
+    });
+  });
+}
+
+function renderSplitFolderTabs() {
+  if (!panel) return;
+  const folderTabs = panel.querySelector('#split-folder-tabs');
+  if (!folderTabs) return;
+
+  folderTabs.innerHTML = folders
+    .map(
+      folder => `
+      <button
+        class="folder-tab ${folder.id === panelState.currentFolderId ? 'active' : ''}"
+        data-folder-id="${folder.id}"
+      >
+        ${escapeHtml(folder.name)}
+      </button>
+    `
+    )
+    .join('');
+
+  folderTabs.querySelectorAll('.folder-tab').forEach(tab => {
+    tab.addEventListener('click', async (e) => {
+      const folderId = (e.target as HTMLElement).getAttribute('data-folder-id');
+      if (folderId) {
+        panelState.currentFolderId = folderId;
+        renderSplitFolderTabs();
+        renderSplitFileList(folderId);
+      }
+    });
+  });
+}
+
+function renderSplitFileList(folderId: string) {
+  if (!panel) return;
+  const fileList = panel.querySelector('#split-file-list');
+  if (!fileList) return;
+
+  chrome.runtime.sendMessage({
+    type: MessageType.GET_NOTES_IN_FOLDER,
+    folderId
+  }).then(response => {
+    if (!response.success) return;
+    const folderNotes: Note[] = response.data;
+
+    if (folderNotes.length === 0) {
+      fileList.innerHTML = '<div class="empty-message">メモがありません</div>';
+      return;
+    }
+
+    fileList.innerHTML = folderNotes
+      .map(
+        note => `
+        <div class="file-item" data-note-id="${note.id}">
+          <div class="file-item-info">
+            <div class="file-item-title">${escapeHtml(note.title)}</div>
+            <div class="file-item-preview">${escapeHtml(note.content.substring(0, 50))}${note.content.length > 50 ? '...' : ''}</div>
+          </div>
+        </div>
+      `
+      )
+      .join('');
+
+    fileList.querySelectorAll('.file-item-info').forEach(item => {
+      item.addEventListener('click', async (e) => {
+        const noteId = (e.currentTarget as HTMLElement).parentElement?.getAttribute('data-note-id');
+        if (noteId) {
+          await openNoteInSplit(noteId);
+        }
+      });
+    });
+  });
+}
+
+async function openNoteInSplit(noteId: string) {
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: MessageType.OPEN_NOTE,
+      noteId
+    });
+
+    if (response.success && response.data) {
+      const note: Note = response.data;
+      openNoteTab(note, undefined, { activate: false });
+      panelState.splitEnabled = true;
+      setRightTab(note.id);
+      closeSplitModal();
+    }
+  } catch (error) {
+    console.error('[Content] Error loading note for split:', error);
+    alert('メモの読み込み中にエラーが発生しました');
+  }
+}
+
+function openSplitModal() {
+  const modal = panel?.querySelector('#split-modal') as HTMLElement | null;
+  if (modal) {
+    modal.style.display = 'flex';
+  }
+}
+
+function closeSplitModal() {
+  const modal = panel?.querySelector('#split-modal') as HTMLElement | null;
+  if (modal) {
+    modal.style.display = 'none';
   }
 }
 
@@ -881,7 +1300,7 @@ async function handleAuthSignIn() {
     }
 
     await loadData();
-    renderMemo();
+    renderAll();
 
     const stateResponse = await chrome.runtime.sendMessage({ type: MessageType.AUTH_GET_STATE });
     if (stateResponse?.success) {
@@ -916,7 +1335,7 @@ async function handleAuthSyncNow() {
     }
 
     await loadData();
-    renderMemo();
+    renderAll();
     alert('同期が完了しました');
   } catch (error) {
     console.error('[Content] Sync failed:', error);
@@ -977,7 +1396,7 @@ async function loadNoteFromFile(noteId: string) {
     if (response.success && response.data) {
       const note: Note = response.data;
 
-      switchToNoteMode(note);
+      openNoteTab(note);
     }
   } catch (error) {
     console.error('[Content] Error loading note:', error);
@@ -1004,10 +1423,10 @@ async function handleRenameNote(noteId: string, folderId: string) {
     if (response.success) {
       // リストを更新
       renderFileList(folderId);
-      // 現在編集中のメモなら、タイトルも更新
-      if (currentEditingNoteId === noteId) {
-        currentNoteTitle = newTitle.trim();
-        renderMemo();
+      if (tabInfoMap[noteId]) {
+        tabInfoMap[noteId].title = newTitle.trim();
+        renderTabs();
+        updateHeaderState();
       }
     } else {
       alert(`エラー: ${response.error}`);
@@ -1030,9 +1449,8 @@ async function handleDeleteNote(noteId: string, folderId: string) {
     if (response.success) {
       // リストを更新
       renderFileList(folderId);
-      // 現在編集中のメモを削除した場合、クイックメモモードに戻る
-      if (currentEditingNoteId === noteId) {
-        switchToQuickMode();
+      if (panelState.openTabs.includes(noteId)) {
+        closeTab(noteId);
       }
     } else {
       alert(`エラー: ${response.error}`);
@@ -1077,15 +1495,39 @@ function closeSaveModal() {
 // ユーティリティ
 // ========================================
 
-function focusMemoTextarea() {
-  if (!panel) return;
+function getTextarea(pane: Pane): HTMLTextAreaElement | null {
+  if (!panel) return null;
+  return panel.querySelector(`#memo-textarea-${pane}`) as HTMLTextAreaElement | null;
+}
 
-  const textarea = panel.querySelector('#memo-textarea') as HTMLTextAreaElement;
+function focusMemoTextarea(pane: Pane) {
+  const textarea = getTextarea(pane);
   if (textarea) {
     textarea.focus();
-    // 末尾にカーソルを移動
     textarea.setSelectionRange(textarea.value.length, textarea.value.length);
   }
+}
+
+function getFocusedPane(): Pane {
+  return panelState.lastFocusedPane;
+}
+
+function getFocusedTabId(): string | null {
+  return getPaneTabId(getFocusedPane());
+}
+
+function flushDraftSave() {
+  if (autosaveTimer) {
+    clearTimeout(autosaveTimer);
+    autosaveTimer = null;
+  }
+
+  if (!draftMemo) return;
+
+  chrome.runtime.sendMessage({
+    type: MessageType.UPDATE_QUICK_MEMO,
+    content: draftMemo.content || ''
+  });
 }
 
 function escapeHtml(text: string): string {

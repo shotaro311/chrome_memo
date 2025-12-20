@@ -392,11 +392,11 @@ export async function getRecentNotes(): Promise<Note[]> {
 }
 
 // ========================================
-// クイックメモ操作
+// 下書きメモ操作
 // ========================================
 
 /**
- * クイックメモを取得
+ * 下書きメモを取得
  */
 export async function getQuickMemo(): Promise<QuickMemo> {
   const data = await chrome.storage.local.get('quickMemo');
@@ -404,7 +404,7 @@ export async function getQuickMemo(): Promise<QuickMemo> {
 }
 
 /**
- * クイックメモを更新
+ * 下書きメモを更新
  */
 export async function updateQuickMemo(content: string): Promise<QuickMemo> {
   const quickMemo: QuickMemo = {
@@ -416,7 +416,7 @@ export async function updateQuickMemo(content: string): Promise<QuickMemo> {
 }
 
 /**
- * クイックメモを追記
+ * 下書きメモを追記
  */
 export async function appendToQuickMemo(text: string): Promise<QuickMemo> {
   const quickMemo = await getQuickMemo();
@@ -425,7 +425,7 @@ export async function appendToQuickMemo(text: string): Promise<QuickMemo> {
 }
 
 /**
- * クイックメモを通常メモとして保存（コピー方式）
+ * 下書きメモを通常メモとして保存（コピー方式）
  */
 export async function saveQuickMemoAsNote(
   folderId: string,
@@ -433,7 +433,7 @@ export async function saveQuickMemoAsNote(
 ): Promise<Note> {
   const quickMemo = await getQuickMemo();
   if (!quickMemo.content.trim()) {
-    throw new Error('クイックメモが空です');
+    throw new Error('下書きメモが空です');
   }
 
   return await createNote(folderId, title, quickMemo.content);

@@ -1,0 +1,11 @@
+# chrome_memo 概要
+- 目的: ブラウザ右上のオーバーレイ型メモパネルで、下書きメモとフォルダ分けメモを扱うChrome拡張(MV3)。
+- 主機能: 下書き自動保存、通常メモ保存/編集、フォルダ管理、タブ切替、スプリット表示、任意同期(Supabase)。
+- 技術: TypeScript, Webpack, Chrome Extension Manifest V3, Chrome Storage API, @supabase/supabase-js。
+- 主要構成:
+  - src/background/background.ts (service worker)
+  - src/content/content.ts (パネルUI)
+  - src/styles/panel.css
+  - public/manifest.json
+  - dist/ (ビルド出力)
+  - docs/requirement.md / docs/*_PLAN*.md

@@ -15,7 +15,6 @@ import {
   getRecentNotes,
   getQuickMemo,
   updateQuickMemo,
-  appendToQuickMemo,
   saveQuickMemoAsNote,
   searchNotes,
   getSettings,
@@ -108,30 +107,6 @@ chrome.commands.onCommand.addListener(async (command) => {
         await chrome.tabs.sendMessage(tab.id, {
           type: MessageType.TOGGLE_PANEL
         });
-        break;
-
-      case 'quick-append':
-        // クイップメモに追記（選択テキストがあればそれを追記）
-        const result = await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: () => window.getSelection()?.toString() || ''
-        });
-
-        const selectedText = result[0]?.result || '';
-
-        if (selectedText) {
-          await appendToQuickMemo(selectedText);
-
-          // パネルを開く（クイックメモを表示）
-          await chrome.tabs.sendMessage(tab.id, {
-            type: MessageType.OPEN_PANEL
-          });
-        } else {
-          // 選択テキストがない場合もパネルを開く
-          await chrome.tabs.sendMessage(tab.id, {
-            type: MessageType.OPEN_PANEL
-          });
-        }
         break;
 
       default:
@@ -263,7 +238,7 @@ async function handleMessage(message: Message): Promise<Response> {
         return { success: true, data: notes };
       }
 
-      // クイックメモ操作
+      // 下書きメモ操作
       case MessageType.GET_QUICK_MEMO: {
         const quickMemo = await getQuickMemo();
         return { success: true, data: quickMemo };
@@ -271,11 +246,6 @@ async function handleMessage(message: Message): Promise<Response> {
 
       case MessageType.UPDATE_QUICK_MEMO: {
         const quickMemo = await updateQuickMemo(message.content);
-        return { success: true, data: quickMemo };
-      }
-
-      case MessageType.QUICK_APPEND: {
-        const quickMemo = await appendToQuickMemo(message.text);
         return { success: true, data: quickMemo };
       }
 

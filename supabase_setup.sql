@@ -97,7 +97,7 @@ CREATE TABLE quick_memo (
 -- Row Level Security (RLS)
 ALTER TABLE quick_memo ENABLE ROW LEVEL SECURITY;
 
--- ポリシー: ユーザーは自分のクイックメモのみアクセス可能
+-- ポリシー: ユーザーは自分の下書きメモのみアクセス可能
 CREATE POLICY "Users can view their own quick memo"
   ON quick_memo FOR SELECT
   USING (auth.uid() = user_id);
@@ -143,7 +143,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
--- トリガー: 新規ユーザー作成時にinboxフォルダとクイックメモを自動作成
+-- トリガー: 新規ユーザー作成時にinboxフォルダと下書きメモを自動作成
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW
