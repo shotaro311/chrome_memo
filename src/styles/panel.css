@@ -283,6 +283,7 @@
   gap: 4px !important;
   overflow-x: auto !important;
   flex: 1 !important;
+  margin-bottom: 16px !important;
 }
 
 .chrome-memo-panel .folder-actions-toolbar {
@@ -291,25 +292,24 @@
 }
 
 .chrome-memo-panel .folder-tab {
-  padding: 6px 12px !important;
-  background: white !important;
-  border: 1px solid #ddd !important;
+  padding: 8px 16px !important;
+  background: #404040 !important;
+  color: #e0e0e0 !important;
+  border: none !important;
   border-radius: 4px !important;
-  font-size: 12px !important;
+  font-size: 13px !important;
   cursor: pointer !important;
   white-space: nowrap !important;
   transition: all 0.2s !important;
 }
 
 .chrome-memo-panel .folder-tab:hover {
-  background: #e8f4fd !important;
-  border-color: #4a90e2 !important;
+  background: #4a4a4a !important;
 }
 
 .chrome-memo-panel .folder-tab.active {
   background: #4a90e2 !important;
-  color: white !important;
-  border-color: #4a90e2 !important;
+  color: #ffffff !important;
 }
 
 /* メモ一覧 */
@@ -349,9 +349,9 @@
 
 .chrome-memo-panel .empty-message {
   text-align: center !important;
-  padding: 24px !important;
-  color: #999 !important;
-  font-size: 13px !important;
+  padding: 40px 20px !important;
+  color: #808080 !important;
+  font-size: 14px !important;
 }
 
 /* メモエディタ */
@@ -604,35 +604,6 @@
   word-break: break-word !important;
 }
 
-/* フォルダタブ */
-.chrome-memo-panel .folder-tabs {
-  display: flex !important;
-  gap: 4px !important;
-  margin-bottom: 16px !important;
-  overflow-x: auto !important;
-}
-
-.chrome-memo-panel .folder-tab {
-  padding: 8px 16px !important;
-  background: #404040 !important;
-  color: #e0e0e0 !important;
-  border: none !important;
-  border-radius: 4px !important;
-  cursor: pointer !important;
-  white-space: nowrap !important;
-  transition: all 0.2s !important;
-  font-size: 13px !important;
-}
-
-.chrome-memo-panel .folder-tab:hover {
-  background: #4a4a4a !important;
-}
-
-.chrome-memo-panel .folder-tab.active {
-  background: #4a90e2 !important;
-  color: #ffffff !important;
-}
-
 /* ファイルリスト */
 .chrome-memo-panel .file-list {
   display: flex !important;
@@ -696,13 +667,6 @@
 .chrome-memo-panel .file-action-btn:hover {
   background: rgba(255, 255, 255, 0.1) !important;
   opacity: 1 !important;
-}
-
-.chrome-memo-panel .empty-message {
-  text-align: center !important;
-  padding: 40px 20px !important;
-  color: #808080 !important;
-  font-size: 14px !important;
 }
 
 /* 保存フォーム */
