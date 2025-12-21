@@ -11,6 +11,38 @@ import {
 } from '../types';
 
 // ========================================
+// 内部ヘルパー
+// ========================================
+
+async function getSyncValue<K extends keyof SyncStorageData>(
+  key: K
+): Promise<SyncStorageData[K] | undefined> {
+  const data = await chrome.storage.sync.get(key as string);
+  return data[key as string] as SyncStorageData[K] | undefined;
+}
+
+async function setSyncValue<K extends keyof SyncStorageData>(
+  key: K,
+  value: SyncStorageData[K]
+): Promise<void> {
+  await chrome.storage.sync.set({ [key]: value } as Partial<SyncStorageData>);
+}
+
+async function getLocalValue<K extends keyof LocalStorageData>(
+  key: K
+): Promise<LocalStorageData[K] | undefined> {
+  const data = await chrome.storage.local.get(key as string);
+  return data[key as string] as LocalStorageData[K] | undefined;
+}
+
+async function setLocalValue<K extends keyof LocalStorageData>(
+  key: K,
+  value: LocalStorageData[K]
+): Promise<void> {
+  await chrome.storage.local.set({ [key]: value } as Partial<LocalStorageData>);
+}
+
+// ========================================
 // 初期化
 // ========================================
 
@@ -63,8 +95,7 @@ export async function initializeStorage(): Promise<void> {
  * すべてのフォルダを取得
  */
 export async function getFolders(): Promise<Folder[]> {
-  const data = await chrome.storage.sync.get('folders');
-  const folders: Record<string, Folder> = data.folders || {};
+  const folders = (await getSyncValue('folders')) || {};
 
   // Inbox を先頭、その後はフォルダ名昇順
   return Object.values(folders).sort((a, b) => {
@@ -83,15 +114,15 @@ export async function createFolder(name: string): Promise<Folder> {
     throw new Error('フォルダ名を入力してください');
   }
 
-  const folders = await getFolders();
+  const folderList = await getFolders();
 
   // 上限チェック
-  if (folders.length >= LIMITS.MAX_FOLDERS) {
+  if (folderList.length >= LIMITS.MAX_FOLDERS) {
     throw new Error(`フォルダ数の上限（${LIMITS.MAX_FOLDERS}）に達しています`);
   }
 
   // 重複チェック（ケース無視）
-  const isDuplicate = folders.some(
+  const isDuplicate = folderList.some(
     f => f.name.toLowerCase() === trimmedName.toLowerCase()
   );
   if (isDuplicate) {
@@ -105,9 +136,9 @@ export async function createFolder(name: string): Promise<Folder> {
     isSystem: false
   };
 
-  const data = await chrome.storage.sync.get('folders');
-  const updatedFolders = { ...data.folders, [newFolder.id]: newFolder };
-  await chrome.storage.sync.set({ folders: updatedFolders });
+  const folderMap = (await getSyncValue('folders')) || {};
+  const updatedFolders = { ...folderMap, [newFolder.id]: newFolder };
+  await setSyncValue('folders', updatedFolders);
 
   return newFolder;
 }
@@ -116,8 +147,8 @@ export async function createFolder(name: string): Promise<Folder> {
  * フォルダを削除（配下のメモも削除）
  */
 export async function deleteFolder(folderId: string): Promise<void> {
-  const folders = await getFolders();
-  const folder = folders.find(f => f.id === folderId);
+  const folderList = await getFolders();
+  const folder = folderList.find(f => f.id === folderId);
 
   if (!folder) {
     throw new Error('フォルダが見つかりません');
@@ -134,10 +165,10 @@ export async function deleteFolder(folderId: string): Promise<void> {
   }
 
   // フォルダを削除
-  const data = await chrome.storage.sync.get('folders');
-  const updatedFolders = { ...data.folders };
+  const folderMap = (await getSyncValue('folders')) || {};
+  const updatedFolders = { ...folderMap };
   delete updatedFolders[folderId];
-  await chrome.storage.sync.set({ folders: updatedFolders });
+  await setSyncValue('folders', updatedFolders);
 }
 
 /**
@@ -149,8 +180,8 @@ export async function renameFolder(folderId: string, newName: string): Promise<v
     throw new Error('フォルダ名を入力してください');
   }
 
-  const folders = await getFolders();
-  const folder = folders.find(f => f.id === folderId);
+  const folderList = await getFolders();
+  const folder = folderList.find(f => f.id === folderId);
 
   if (!folder) {
     throw new Error('フォルダが見つかりません');
@@ -161,19 +192,19 @@ export async function renameFolder(folderId: string, newName: string): Promise<v
   }
 
   // 重複チェック（自分自身は除外）
-  const isDuplicate = folders.some(
+  const isDuplicate = folderList.some(
     f => f.id !== folderId && f.name.toLowerCase() === trimmedName.toLowerCase()
   );
   if (isDuplicate) {
     throw new Error('同じ名前のフォルダが既に存在します');
   }
 
-  const data = await chrome.storage.sync.get('folders');
+  const folderMap = (await getSyncValue('folders')) || {};
   const updatedFolders = {
-    ...data.folders,
+    ...folderMap,
     [folderId]: { ...folder, name: trimmedName }
   };
-  await chrome.storage.sync.set({ folders: updatedFolders });
+  await setSyncValue('folders', updatedFolders);
 }
 
 // ========================================
@@ -184,8 +215,7 @@ export async function renameFolder(folderId: string, newName: string): Promise<v
  * 指定フォルダ内のメモを取得（最終更新日時降順）
  */
 export async function getNotesInFolder(folderId: string): Promise<Note[]> {
-  const localData = await chrome.storage.local.get('notes');
-  const notes: Record<string, Note> = localData.notes || {};
+  const notes = (await getLocalValue('notes')) || {};
 
   const folderNotes = Object.values(notes)
     .filter(note => note.folderId === folderId)
@@ -198,8 +228,7 @@ export async function getNotesInFolder(folderId: string): Promise<Note[]> {
  * メモを取得
  */
 export async function getNote(noteId: string): Promise<Note | null> {
-  const localData = await chrome.storage.local.get('notes');
-  const notes: Record<string, Note> = localData.notes || {};
+  const notes = (await getLocalValue('notes')) || {};
   return notes[noteId] || null;
 }
 
@@ -207,8 +236,7 @@ export async function getNote(noteId: string): Promise<Note | null> {
  * すべてのメモを取得
  */
 export async function getAllNotes(): Promise<Note[]> {
-  const localData = await chrome.storage.local.get('notes');
-  const notes: Record<string, Note> = localData.notes || {};
+  const notes = (await getLocalValue('notes')) || {};
   return Object.values(notes);
 }
 
@@ -262,9 +290,9 @@ export async function createNote(
   };
 
   // Localストレージに本文を保存
-  const localData = await chrome.storage.local.get('notes');
-  const updatedNotes = { ...localData.notes, [newNote.id]: newNote };
-  await chrome.storage.local.set({ notes: updatedNotes });
+  const notes = (await getLocalValue('notes')) || {};
+  const updatedNotes = { ...notes, [newNote.id]: newNote };
+  await setLocalValue('notes', updatedNotes);
 
   // Syncストレージにメタデータを保存
   const metadata: NoteMetadata = {
@@ -275,9 +303,9 @@ export async function createNote(
     updatedAt: newNote.updatedAt,
     lastOpenedAt: newNote.lastOpenedAt
   };
-  const syncData = await chrome.storage.sync.get('noteMetadata');
-  const updatedMetadata = { ...syncData.noteMetadata, [metadata.id]: metadata };
-  await chrome.storage.sync.set({ noteMetadata: updatedMetadata });
+  const noteMetadata = (await getSyncValue('noteMetadata')) || {};
+  const updatedMetadata = { ...noteMetadata, [metadata.id]: metadata };
+  await setSyncValue('noteMetadata', updatedMetadata);
 
   return newNote;
 }
@@ -318,9 +346,9 @@ export async function updateNote(
   note.updatedAt = Date.now();
 
   // Localストレージを更新
-  const localData = await chrome.storage.local.get('notes');
-  const updatedNotes = { ...localData.notes, [noteId]: note };
-  await chrome.storage.local.set({ notes: updatedNotes });
+  const notes = (await getLocalValue('notes')) || {};
+  const updatedNotes = { ...notes, [noteId]: note };
+  await setLocalValue('notes', updatedNotes);
 
   // Syncストレージのメタデータを更新
   const metadata: NoteMetadata = {
@@ -331,9 +359,9 @@ export async function updateNote(
     updatedAt: note.updatedAt,
     lastOpenedAt: note.lastOpenedAt
   };
-  const syncData = await chrome.storage.sync.get('noteMetadata');
-  const updatedMetadata = { ...syncData.noteMetadata, [metadata.id]: metadata };
-  await chrome.storage.sync.set({ noteMetadata: updatedMetadata });
+  const noteMetadata = (await getSyncValue('noteMetadata')) || {};
+  const updatedMetadata = { ...noteMetadata, [metadata.id]: metadata };
+  await setSyncValue('noteMetadata', updatedMetadata);
 
   return note;
 }
@@ -343,16 +371,16 @@ export async function updateNote(
  */
 export async function deleteNote(noteId: string): Promise<void> {
   // Localストレージから削除
-  const localData = await chrome.storage.local.get('notes');
-  const updatedNotes = { ...localData.notes };
+  const notes = (await getLocalValue('notes')) || {};
+  const updatedNotes = { ...notes };
   delete updatedNotes[noteId];
-  await chrome.storage.local.set({ notes: updatedNotes });
+  await setLocalValue('notes', updatedNotes);
 
   // Syncストレージのメタデータから削除
-  const syncData = await chrome.storage.sync.get('noteMetadata');
-  const updatedMetadata = { ...syncData.noteMetadata };
+  const noteMetadata = (await getSyncValue('noteMetadata')) || {};
+  const updatedMetadata = { ...noteMetadata };
   delete updatedMetadata[noteId];
-  await chrome.storage.sync.set({ noteMetadata: updatedMetadata });
+  await setSyncValue('noteMetadata', updatedMetadata);
 }
 
 /**
@@ -367,17 +395,17 @@ export async function markNoteAsOpened(noteId: string): Promise<void> {
   note.lastOpenedAt = Date.now();
 
   // Localストレージを更新
-  const localData = await chrome.storage.local.get('notes');
-  const updatedNotes = { ...localData.notes, [noteId]: note };
-  await chrome.storage.local.set({ notes: updatedNotes });
+  const notes = (await getLocalValue('notes')) || {};
+  const updatedNotes = { ...notes, [noteId]: note };
+  await setLocalValue('notes', updatedNotes);
 
   // Syncストレージのメタデータを更新
-  const syncData = await chrome.storage.sync.get('noteMetadata');
-  const metadata = syncData.noteMetadata[noteId];
+  const noteMetadata = (await getSyncValue('noteMetadata')) || {};
+  const metadata = noteMetadata[noteId];
   if (metadata) {
     metadata.lastOpenedAt = note.lastOpenedAt;
-    const updatedMetadata = { ...syncData.noteMetadata, [noteId]: metadata };
-    await chrome.storage.sync.set({ noteMetadata: updatedMetadata });
+    const updatedMetadata = { ...noteMetadata, [noteId]: metadata };
+    await setSyncValue('noteMetadata', updatedMetadata);
   }
 }
 
@@ -399,8 +427,8 @@ export async function getRecentNotes(): Promise<Note[]> {
  * 下書きメモを取得
  */
 export async function getQuickMemo(): Promise<QuickMemo> {
-  const data = await chrome.storage.local.get('quickMemo');
-  return data.quickMemo || { content: '', updatedAt: Date.now() };
+  const quickMemo = await getLocalValue('quickMemo');
+  return quickMemo || { content: '', updatedAt: Date.now() };
 }
 
 /**
@@ -411,7 +439,7 @@ export async function updateQuickMemo(content: string): Promise<QuickMemo> {
     content,
     updatedAt: Date.now()
   };
-  await chrome.storage.local.set({ quickMemo });
+  await setLocalValue('quickMemo', quickMemo);
   return quickMemo;
 }
 
@@ -479,8 +507,8 @@ export async function searchNotes(
  * 設定を取得
  */
 export async function getSettings(): Promise<AppSettings> {
-  const data = await chrome.storage.sync.get('settings');
-  return data.settings || { shortcutGuideShown: false };
+  const settings = await getSyncValue('settings');
+  return settings || { shortcutGuideShown: false };
 }
 
 /**
@@ -491,7 +519,7 @@ export async function updateSettings(
 ): Promise<AppSettings> {
   const settings = await getSettings();
   const updatedSettings = { ...settings, ...updates };
-  await chrome.storage.sync.set({ settings: updatedSettings });
+  await setSyncValue('settings', updatedSettings);
   return updatedSettings;
 }
 
