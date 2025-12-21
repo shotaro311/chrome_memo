@@ -25,3 +25,9 @@
 - Architect: T1, T4
 - Worker-1: T2
 - Worker-2: T3
+
+## 結果
+- T1: ✅ merged（`3eb14b7`）
+- T2: ✅ merged（merge: `89bd582` / commit: `a21c62e`）
+- T3: ✅ merged（merge: `1b27cff` / commit: `645aa84`）
+- T4: 🔄 残り（手動確認・ドキュメント最終同期・RUNクローズ）
