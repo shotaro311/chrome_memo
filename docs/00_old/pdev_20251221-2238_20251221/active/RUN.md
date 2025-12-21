@@ -19,7 +19,7 @@
   - リファクタリングを並列で進めたい
 
 ## DAG（参照）
-- `docs/pdev/DAG.md`
+- `docs/00_old/pdev_20251221-2238_20251221/DAG.md`
 
 ## タスク割り当て（案）
 - Architect: T1, T4
@@ -30,4 +30,4 @@
 - T1: ✅ merged（`3eb14b7`）
 - T2: ✅ merged（merge: `89bd582` / commit: `a21c62e`）
 - T3: ✅ merged（merge: `1b27cff` / commit: `645aa84`）
-- T4: 🔄 残り（手動確認・ドキュメント最終同期・RUNクローズ）
+- T4: ✅ 完了（RUNアーカイブ / worktree削除 / ローカルブランチ削除）
