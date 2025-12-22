@@ -18,6 +18,7 @@ export function getPanelHtml(): string {
             <div class="font-size-options" id="font-size-options"></div>
           </div>
         </div>
+        <button class="header-btn" id="ai-btn" title="AI">🤖</button>
         <button class="header-btn" id="auth-btn" title="同期 / サインイン">👤</button>
         <span class="memo-current-label" id="memo-current-label"></span>
       </div>
@@ -112,6 +113,58 @@ export function getPanelHtml(): string {
             <div class="auth-actions">
               <button class="btn-secondary" id="auth-sync-now-btn">今すぐ同期</button>
               <button class="btn-secondary" id="auth-sign-out-btn">サインアウト</button>
+            </div>
+          </div>
+          <div class="api-key-section">
+            <div class="api-key-title">Gemini APIキー</div>
+            <input
+              type="password"
+              id="gemini-api-key-input"
+              class="save-input"
+              placeholder="APIキーを入力"
+            >
+            <div class="api-key-actions">
+              <button class="btn-primary" id="save-gemini-api-key-btn">保存</button>
+              <button class="btn-secondary" id="delete-gemini-api-key-btn">削除</button>
+            </div>
+            <p class="api-key-status" id="gemini-api-key-status">未保存</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AIモーダル -->
+    <div class="ai-modal" id="ai-modal" style="display: none;">
+      <div class="ai-modal-content">
+        <div class="ai-modal-header">
+          <h3>AI</h3>
+          <button class="close-modal-btn" id="close-ai-modal-btn">×</button>
+        </div>
+        <div class="ai-modal-body">
+          <div class="ai-status-row">
+            <div class="ai-status-item">選択: <span id="ai-selection-status">なし</span></div>
+            <div class="ai-status-item">対象: <span id="ai-target-pane">左</span></div>
+          </div>
+          <div class="ai-selection-preview" id="ai-selection-preview" style="display: none;"></div>
+          <div class="form-group">
+            <label for="ai-prompt-input">指示</label>
+            <textarea
+              id="ai-prompt-input"
+              class="save-input ai-textarea"
+              placeholder="例: 要約して、箇条書きで"
+            ></textarea>
+          </div>
+          <div class="ai-apply-row">
+            <div class="form-group ai-apply-select">
+              <label for="ai-apply-mode">適用先</label>
+              <select id="ai-apply-mode" class="save-select">
+                <option value="replace-selection">選択を置換</option>
+                <option value="insert-cursor">カーソルに挿入</option>
+                <option value="replace-all">全文を置換</option>
+              </select>
+            </div>
+            <div class="ai-apply-actions">
+              <button class="btn-primary" id="ai-run-btn">実行して反映</button>
             </div>
           </div>
         </div>

@@ -22,6 +22,8 @@ import {
 } from '../utils/storage';
 import { getAuthState, onAuthStateChange, signInWithGoogle, signOut } from '../lib/auth';
 import { fullSync } from '../lib/sync';
+import { chromeStorage } from '../lib/chromeStorage';
+import { generateGeminiText } from '../lib/gemini';
 
 // ========================================
 // インストール時の初期化
@@ -122,11 +124,20 @@ chrome.commands.onCommand.addListener(async (command) => {
 // ========================================
 
 chrome.runtime.onMessage.addListener((message: Message, sender, sendResponse) => {
-  console.log('[Background] Message received:', message);
+  const isGeminiMessage = message.type === MessageType.GEMINI_GENERATE;
+  if (isGeminiMessage) {
+    console.log('[Background] Message received:', { type: message.type });
+  } else {
+    console.log('[Background] Message received:', message);
+  }
 
   handleMessage(message)
     .then(response => {
-      console.log('[Background] Sending response:', response);
+      if (isGeminiMessage) {
+        console.log('[Background] Sending response:', { success: response.success });
+      } else {
+        console.log('[Background] Sending response:', response);
+      }
       sendResponse(response);
     })
     .catch(error => {
@@ -186,6 +197,23 @@ async function handleMessage(message: Message): Promise<Response> {
       case MessageType.UPDATE_SETTINGS: {
         const settings = await updateSettings(message.updates);
         return { success: true, data: settings };
+      }
+
+      // AI
+      case MessageType.GEMINI_GENERATE: {
+        const apiKey = await chromeStorage.getItem('geminiApiKey');
+        if (!apiKey) {
+          return { success: false, error: 'Gemini APIキーが未設定です' };
+        }
+        const result = await generateGeminiText({
+          apiKey,
+          prompt: message.prompt,
+          model: message.model
+        });
+        if (!result.success) {
+          return { success: false, error: result.error || 'Geminiの呼び出しに失敗しました' };
+        }
+        return { success: true, data: result.text };
       }
 
       // フォルダ操作

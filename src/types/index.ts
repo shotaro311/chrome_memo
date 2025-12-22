@@ -122,6 +122,9 @@ export enum MessageType {
 
   UPDATE_QUICK_MEMO = 'UPDATE_QUICK_MEMO',
 
+  // AI
+  GEMINI_GENERATE = 'GEMINI_GENERATE',
+
   // フォルダ操作
   CREATE_FOLDER = 'CREATE_FOLDER',
   DELETE_FOLDER = 'DELETE_FOLDER',
@@ -214,6 +217,15 @@ export interface GetSettingsMessage extends BaseMessage {
 export interface UpdateSettingsMessage extends BaseMessage {
   type: MessageType.UPDATE_SETTINGS;
   updates: Partial<AppSettings>;
+}
+
+/**
+ * Gemini生成メッセージ
+ */
+export interface GeminiGenerateMessage extends BaseMessage {
+  type: MessageType.GEMINI_GENERATE;
+  prompt: string;
+  model?: string;
 }
 
 /**
@@ -366,6 +378,7 @@ export type Message =
   | AuthSyncNowMessage
   | GetSettingsMessage
   | UpdateSettingsMessage
+  | GeminiGenerateMessage
   | UpdateQuickMemoMessage
   | CreateFolderMessage
   | DeleteFolderMessage
