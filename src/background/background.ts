@@ -177,6 +177,17 @@ async function handleMessage(message: Message): Promise<Response> {
         return { success: true, data: null };
       }
 
+      // 設定
+      case MessageType.GET_SETTINGS: {
+        const settings = await getSettings();
+        return { success: true, data: settings };
+      }
+
+      case MessageType.UPDATE_SETTINGS: {
+        const settings = await updateSettings(message.updates);
+        return { success: true, data: settings };
+      }
+
       // フォルダ操作
       case MessageType.GET_FOLDERS: {
         const folders = await getFolders();
@@ -236,6 +247,25 @@ async function handleMessage(message: Message): Promise<Response> {
       case MessageType.GET_RECENT_NOTES: {
         const notes = await getRecentNotes();
         return { success: true, data: notes };
+      }
+
+      case MessageType.GET_EXPORT_DATA: {
+        const [folders, notes, quickMemo, settings] = await Promise.all([
+          getFolders(),
+          getAllNotes(),
+          getQuickMemo(),
+          getSettings()
+        ]);
+        return {
+          success: true,
+          data: {
+            exportedAt: new Date().toISOString(),
+            folders,
+            notes,
+            quickMemo,
+            settings
+          }
+        };
       }
 
       // 下書きメモ操作

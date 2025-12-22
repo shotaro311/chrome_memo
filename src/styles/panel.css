@@ -17,6 +17,7 @@
   display: flex !important;
   flex-direction: column !important;
   overflow: hidden !important;
+  --memo-font-size: 15px;
 }
 
 .chrome-memo-panel.is-hidden {
@@ -35,6 +36,7 @@
   justify-content: space-between !important;
   align-items: center !important;
   border-bottom: 1px solid #404040 !important;
+  cursor: grab !important;
 }
 
 .chrome-memo-panel .panel-header h2 {
@@ -49,6 +51,12 @@
   align-items: center !important;
   flex: 1 !important;
   min-width: 0 !important;
+}
+
+.chrome-memo-panel .header-right {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
 }
 
 .chrome-memo-panel .memo-current-label {
@@ -99,6 +107,49 @@
 
 .chrome-memo-panel .close-btn:hover {
   background: rgba(255, 255, 255, 0.1) !important;
+}
+
+.chrome-memo-panel.is-dragging .panel-header {
+  cursor: grabbing !important;
+}
+
+.chrome-memo-panel .font-size-control {
+  position: relative !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+.chrome-memo-panel .font-size-menu {
+  position: absolute !important;
+  top: 32px !important;
+  right: 0 !important;
+  background: #2b2b2b !important;
+  border: 1px solid #3a3a3a !important;
+  padding: 8px !important;
+  border-radius: 6px !important;
+  display: none !important;
+  flex-direction: column !important;
+  gap: 6px !important;
+  z-index: 10 !important;
+  min-width: 140px !important;
+}
+
+.chrome-memo-panel .font-size-menu label {
+  font-size: 12px !important;
+  color: #cfcfcf !important;
+}
+
+.chrome-memo-panel .font-size-select {
+  width: 100% !important;
+  background: #1e1e1e !important;
+  border: 1px solid #404040 !important;
+  color: #ffffff !important;
+  border-radius: 4px !important;
+  padding: 4px 6px !important;
+}
+
+.chrome-memo-panel .font-size-menu.is-open {
+  display: flex !important;
 }
 
 /* ========================================
@@ -205,7 +256,7 @@
   background: #1e1e1e !important;
   color: #ffffff !important;
   font-family: 'Menlo', 'Monaco', 'Courier New', monospace !important;
-  font-size: 15px !important;
+  font-size: var(--memo-font-size) !important;
   line-height: 1.6 !important;
   resize: none !important;
   box-sizing: border-box !important;
