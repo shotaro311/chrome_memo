@@ -71,6 +71,9 @@ export interface SyncStorageData {
  */
 export interface AppSettings {
   shortcutGuideShown: boolean; // ショートカット案内を表示したか
+  memoFontSize: number; // メモ欄のフォントサイズ(px)
+  panelLastWidth: number; // 最後に手動で調整したパネル幅
+  panelLastHeight: number; // 最後に手動で調整したパネル高さ
 }
 
 // ========================================
@@ -113,6 +116,10 @@ export enum MessageType {
   AUTH_GET_STATE = 'AUTH_GET_STATE',
   AUTH_SYNC_NOW = 'AUTH_SYNC_NOW',
 
+  // 設定
+  GET_SETTINGS = 'GET_SETTINGS',
+  UPDATE_SETTINGS = 'UPDATE_SETTINGS',
+
   UPDATE_QUICK_MEMO = 'UPDATE_QUICK_MEMO',
 
   // フォルダ操作
@@ -133,6 +140,9 @@ export enum MessageType {
   GET_NOTE = 'GET_NOTE',
   GET_QUICK_MEMO = 'GET_QUICK_MEMO',
   GET_RECENT_NOTES = 'GET_RECENT_NOTES',
+
+  // エクスポート
+  GET_EXPORT_DATA = 'GET_EXPORT_DATA',
 
   // 検索
   SEARCH_NOTES = 'SEARCH_NOTES',
@@ -189,6 +199,21 @@ export interface AuthGetStateMessage extends BaseMessage {
  */
 export interface AuthSyncNowMessage extends BaseMessage {
   type: MessageType.AUTH_SYNC_NOW;
+}
+
+/**
+ * 設定取得メッセージ
+ */
+export interface GetSettingsMessage extends BaseMessage {
+  type: MessageType.GET_SETTINGS;
+}
+
+/**
+ * 設定更新メッセージ
+ */
+export interface UpdateSettingsMessage extends BaseMessage {
+  type: MessageType.UPDATE_SETTINGS;
+  updates: Partial<AppSettings>;
 }
 
 /**
@@ -306,6 +331,13 @@ export interface GetRecentNotesMessage extends BaseMessage {
 }
 
 /**
+ * エクスポートデータ取得メッセージ
+ */
+export interface GetExportDataMessage extends BaseMessage {
+  type: MessageType.GET_EXPORT_DATA;
+}
+
+/**
  * 検索メッセージ
  */
 export interface SearchNotesMessage extends BaseMessage {
@@ -332,6 +364,8 @@ export type Message =
   | AuthSignOutMessage
   | AuthGetStateMessage
   | AuthSyncNowMessage
+  | GetSettingsMessage
+  | UpdateSettingsMessage
   | UpdateQuickMemoMessage
   | CreateFolderMessage
   | DeleteFolderMessage
@@ -346,6 +380,7 @@ export type Message =
   | GetNoteMessage
   | GetQuickMemoMessage
   | GetRecentNotesMessage
+  | GetExportDataMessage
   | SearchNotesMessage
   | ErrorMessage;
 
@@ -396,7 +431,10 @@ export const LIMITS = {
 
   // デフォルトパネルサイズ
   DEFAULT_PANEL_WIDTH: 600,
-  DEFAULT_PANEL_HEIGHT: 700
+  DEFAULT_PANEL_HEIGHT: 700,
+
+  // デフォルトメモフォントサイズ(px)
+  DEFAULT_MEMO_FONT_SIZE: 15
 } as const;
 
 /**

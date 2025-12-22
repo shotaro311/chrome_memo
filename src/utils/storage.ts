@@ -63,7 +63,10 @@ export async function initializeStorage(): Promise<void> {
     };
 
     const defaultSettings: AppSettings = {
-      shortcutGuideShown: false
+      shortcutGuideShown: false,
+      memoFontSize: LIMITS.DEFAULT_MEMO_FONT_SIZE,
+      panelLastWidth: LIMITS.DEFAULT_PANEL_WIDTH,
+      panelLastHeight: LIMITS.DEFAULT_PANEL_HEIGHT
     };
 
     await chrome.storage.sync.set({
@@ -508,7 +511,13 @@ export async function searchNotes(
  */
 export async function getSettings(): Promise<AppSettings> {
   const settings = await getSyncValue('settings');
-  return settings || { shortcutGuideShown: false };
+  return {
+    shortcutGuideShown: false,
+    memoFontSize: LIMITS.DEFAULT_MEMO_FONT_SIZE,
+    panelLastWidth: LIMITS.DEFAULT_PANEL_WIDTH,
+    panelLastHeight: LIMITS.DEFAULT_PANEL_HEIGHT,
+    ...(settings || {})
+  };
 }
 
 /**

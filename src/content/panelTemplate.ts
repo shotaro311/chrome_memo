@@ -10,10 +10,21 @@ export function getPanelHtml(): string {
         <button class="header-btn" id="save-btn" title="上書き保存" style="display: none;">📥</button>
         <button class="header-btn" id="open-file-btn" title="ファイルを開く">📂</button>
         <button class="header-btn" id="split-view-btn" title="スプリットビュー">⇔</button>
+        <button class="header-btn" id="export-data-btn" title="メモをエクスポート">📤</button>
+        <div class="font-size-control" id="font-size-control">
+          <button class="header-btn" id="font-size-btn" title="フォントサイズ">🔠</button>
+          <div class="font-size-menu" id="font-size-menu">
+            <label for="font-size-select">文字サイズ</label>
+            <select id="font-size-select" class="font-size-select"></select>
+          </div>
+        </div>
         <button class="header-btn" id="auth-btn" title="同期 / サインイン">👤</button>
         <span class="memo-current-label" id="memo-current-label"></span>
       </div>
-      <button class="close-btn" id="close-panel-btn">×</button>
+      <div class="header-right">
+        <button class="header-btn" id="toggle-panel-size-btn" title="パネルサイズ切り替え">⤢</button>
+        <button class="close-btn" id="close-panel-btn">×</button>
+      </div>
     </div>
 
     <div class="panel-content">
@@ -132,4 +143,3 @@ export function getPanelHtml(): string {
     <div class="resize-handle" id="resize-handle"></div>
   `;
 }
-
