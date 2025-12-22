@@ -14,8 +14,8 @@ export function getPanelHtml(): string {
         <div class="font-size-control" id="font-size-control">
           <button class="header-btn" id="font-size-btn" title="フォントサイズ">🔠</button>
           <div class="font-size-menu" id="font-size-menu">
-            <label for="font-size-select">文字サイズ</label>
-            <select id="font-size-select" class="font-size-select"></select>
+            <label>文字サイズ</label>
+            <div class="font-size-options" id="font-size-options"></div>
           </div>
         </div>
         <button class="header-btn" id="auth-btn" title="同期 / サインイン">👤</button>

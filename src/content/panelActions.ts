@@ -27,6 +27,8 @@ export interface PanelActionsDeps {
 export function createPanelActions(state: PanelActionsState, deps: PanelActionsDeps) {
   const { getPanel, panelState, folders, draftMemo, tabInfoMap, tabContentCache, tabUnsavedMap, timers } = state;
   const { view, getTextarea, escapeHtml } = deps;
+  let folderHoverTimer: number | null = null;
+  let lastHoverFolderId: string | null = null;
 
   async function loadData() {
     try {
@@ -222,6 +224,9 @@ export function createPanelActions(state: PanelActionsState, deps: PanelActionsD
 
     const panel = getPanel();
     const fileModal = panel?.querySelector('#file-modal') as HTMLElement | null;
+    if (fileModal?.style.display === 'flex') {
+      return;
+    }
     if (fileModal) {
       fileModal.style.display = 'flex';
     }
@@ -765,10 +770,39 @@ export function createPanelActions(state: PanelActionsState, deps: PanelActionsD
       )
       .join('');
 
+    if (!folderTabs.hasAttribute('data-hover-bound')) {
+      folderTabs.setAttribute('data-hover-bound', 'true');
+      folderTabs.addEventListener('pointerleave', () => {
+        if (folderHoverTimer) {
+          clearTimeout(folderHoverTimer);
+          folderHoverTimer = null;
+        }
+      });
+    }
+
     folderTabs.querySelectorAll('.folder-tab').forEach(tab => {
+      tab.addEventListener('pointerenter', () => {
+        const folderId = tab.getAttribute('data-folder-id');
+        if (!folderId) return;
+        if (folderId === panelState.currentFolderId || folderId === lastHoverFolderId) return;
+        if (folderHoverTimer) {
+          clearTimeout(folderHoverTimer);
+        }
+        folderHoverTimer = window.setTimeout(() => {
+          panelState.currentFolderId = folderId;
+          lastHoverFolderId = folderId;
+          renderFolderTabs();
+          renderFileList(folderId);
+        }, 150);
+      });
+
       tab.addEventListener('click', async (e) => {
         const folderId = (e.target as HTMLElement).getAttribute('data-folder-id');
         if (folderId) {
+          if (folderHoverTimer) {
+            clearTimeout(folderHoverTimer);
+            folderHoverTimer = null;
+          }
           panelState.currentFolderId = folderId;
           renderFolderTabs();
           renderFileList(folderId);
@@ -846,4 +880,3 @@ export function createPanelActions(state: PanelActionsState, deps: PanelActionsD
     refreshAuthButton
   };
 }
-

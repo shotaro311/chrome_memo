@@ -218,6 +218,17 @@ function setupEventListeners() {
 
   panel.addEventListener('click', (e) => {
     const target = e.target as HTMLElement;
+    const fontSizeOption = target.closest('.font-size-option') as HTMLElement | null;
+    if (fontSizeOption) {
+      const nextSize = Number(fontSizeOption.getAttribute('data-size'));
+      if (!Number.isNaN(nextSize)) {
+        applyMemoFontSize(nextSize);
+        appSettings.memoFontSize = nextSize;
+        void updateSettings({ memoFontSize: nextSize });
+      }
+      closeFontSizeMenu();
+      return;
+    }
     const id = target.id || target.closest('button')?.id;
 
     switch (id) {
@@ -292,16 +303,29 @@ function setupEventListeners() {
   setupTextareaEvents(memoTextareaLeft, 'left');
   setupTextareaEvents(memoTextareaRight, 'right');
 
-  const fontSizeSelect = panel.querySelector('#font-size-select') as HTMLSelectElement | null;
-  fontSizeSelect?.addEventListener('change', (e) => {
-    const target = e.target as HTMLSelectElement;
-    const nextSize = Number(target.value);
-    if (!Number.isNaN(nextSize)) {
-      applyMemoFontSize(nextSize);
-      appSettings.memoFontSize = nextSize;
-      void updateSettings({ memoFontSize: nextSize });
+  const openFileBtn = panel.querySelector('#open-file-btn') as HTMLButtonElement | null;
+  let openFileHoverTimer: number | null = null;
+  openFileBtn?.addEventListener('pointerenter', () => {
+    if (openFileHoverTimer) {
+      clearTimeout(openFileHoverTimer);
     }
+    openFileHoverTimer = window.setTimeout(() => {
+      void actions.handleOpenFile();
+    }, 500);
   });
+  openFileBtn?.addEventListener('pointerleave', () => {
+    if (!openFileHoverTimer) return;
+    clearTimeout(openFileHoverTimer);
+    openFileHoverTimer = null;
+  });
+
+  const fileModal = panel.querySelector('#file-modal') as HTMLElement | null;
+  if (fileModal && !fileModal.hasAttribute('data-hover-close')) {
+    fileModal.setAttribute('data-hover-close', 'true');
+    fileModal.addEventListener('pointerleave', () => {
+      actions.closeFileModal();
+    });
+  }
 
   document.addEventListener('click', handleDocumentClick);
 
@@ -325,28 +349,37 @@ function handleDocumentClick(e: MouseEvent) {
   if (target.closest('#font-size-control')) {
     return;
   }
-  menu.classList.remove('is-open');
+  closeFontSizeMenu();
 }
 
 function toggleFontSizeMenu() {
   if (!panel) return;
   const menu = panel.querySelector('#font-size-menu') as HTMLElement | null;
-  const select = panel.querySelector('#font-size-select') as HTMLSelectElement | null;
-  if (!menu || !select) return;
+  const optionsEl = panel.querySelector('#font-size-options') as HTMLElement | null;
+  if (!menu || !optionsEl) return;
 
   const isOpen = menu.classList.contains('is-open');
   if (isOpen) {
-    menu.classList.remove('is-open');
+    closeFontSizeMenu();
     return;
   }
 
   const baseSize = appSettings.memoFontSize;
   const options = Array.from({ length: 7 }, (_, index) => baseSize - 3 + index);
-  select.innerHTML = options
-    .map(size => `<option value="${size}">${size}pt</option>`)
+  optionsEl.innerHTML = options
+    .map(size => {
+      const activeClass = size === baseSize ? 'is-active' : '';
+      return `<button class="font-size-option ${activeClass}" data-size="${size}">${size}pt</button>`;
+    })
     .join('');
-  select.value = String(baseSize);
   menu.classList.add('is-open');
+}
+
+function closeFontSizeMenu() {
+  if (!panel) return;
+  const menu = panel.querySelector('#font-size-menu') as HTMLElement | null;
+  if (!menu) return;
+  menu.classList.remove('is-open');
 }
 
 function handleTogglePanelSize() {
@@ -425,13 +458,17 @@ function setupResize() {
   let startY = 0;
   let startWidth = 0;
   let startHeight = 0;
+  let startRight = 0;
 
   resizeHandle.addEventListener('mousedown', (e: MouseEvent) => {
+    if (!panel) return;
     isResizing = true;
     startX = e.clientX;
     startY = e.clientY;
     startWidth = panelState.width;
     startHeight = panelState.height;
+    const rect = panel.getBoundingClientRect();
+    startRight = rect.right;
 
     e.preventDefault();
   });
@@ -448,8 +485,11 @@ function setupResize() {
     newWidth = Math.max(LIMITS.MIN_PANEL_WIDTH, Math.min(LIMITS.MAX_PANEL_WIDTH, newWidth));
     newHeight = Math.max(LIMITS.MIN_PANEL_HEIGHT, Math.min(LIMITS.MAX_PANEL_HEIGHT, newHeight));
 
+    if (!panel) return;
     panel.style.width = `${newWidth}px`;
     panel.style.height = `${newHeight}px`;
+    panel.style.left = `${startRight - newWidth}px`;
+    panel.style.right = 'auto';
 
     panelState.width = newWidth;
     panelState.height = newHeight;
