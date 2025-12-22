@@ -707,6 +707,30 @@
   margin-bottom: 8px !important;
 }
 
+.chrome-memo-panel .ai-modal-header-actions {
+  display: flex !important;
+  gap: 6px !important;
+}
+
+.chrome-memo-panel .ai-settings-title {
+  font-size: 13px !important;
+  color: #cfcfcf !important;
+  margin-bottom: 8px !important;
+}
+
+.chrome-memo-panel .ai-settings-actions {
+  display: flex !important;
+  gap: 8px !important;
+  justify-content: flex-end !important;
+  margin-top: 8px !important;
+}
+
+.chrome-memo-panel .ai-settings {
+  margin-bottom: 16px !important;
+  padding-bottom: 12px !important;
+  border-bottom: 1px solid #3a3a3a !important;
+}
+
 .chrome-memo-panel .ai-selection-preview {
   background: #1e1e1e !important;
   border: 1px solid #404040 !important;

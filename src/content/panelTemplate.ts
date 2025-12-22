@@ -138,9 +138,28 @@ export function getPanelHtml(): string {
       <div class="ai-modal-content">
         <div class="ai-modal-header">
           <h3>AI</h3>
-          <button class="close-modal-btn" id="close-ai-modal-btn">×</button>
+          <div class="ai-modal-header-actions">
+            <button class="close-modal-btn" id="ai-settings-btn" title="AI設定">⚙</button>
+            <button class="close-modal-btn" id="close-ai-modal-btn">×</button>
+          </div>
         </div>
         <div class="ai-modal-body">
+          <div class="ai-settings" id="ai-settings" style="display: none;">
+            <div class="ai-settings-title">AI設定</div>
+            <div class="form-group">
+              <label for="gemini-custom-prompt-input">常に適用するプロンプト</label>
+              <textarea
+                id="gemini-custom-prompt-input"
+                class="save-input ai-textarea"
+                placeholder="例: 日本語で、箇条書き中心で、丁寧語で"
+              ></textarea>
+            </div>
+            <div class="ai-settings-actions">
+              <button class="btn-primary" id="save-gemini-custom-prompt-btn">保存</button>
+              <button class="btn-secondary" id="clear-gemini-custom-prompt-btn">クリア</button>
+            </div>
+            <p class="api-key-status" id="gemini-custom-prompt-status">未保存</p>
+          </div>
           <div class="ai-status-row">
             <div class="ai-status-item">選択: <span id="ai-selection-status">なし</span></div>
             <div class="ai-status-item">対象: <span id="ai-target-pane">左</span></div>

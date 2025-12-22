@@ -271,6 +271,9 @@ function setupEventListeners() {
       case 'ai-btn':
         openAiModal();
         break;
+      case 'ai-settings-btn':
+        toggleAiSettings();
+        break;
       case 'close-file-modal-btn':
         e.stopPropagation();
         actions.closeFileModal();
@@ -311,6 +314,12 @@ function setupEventListeners() {
         break;
       case 'delete-gemini-api-key-btn':
         void handleDeleteGeminiApiKey();
+        break;
+      case 'save-gemini-custom-prompt-btn':
+        void handleSaveGeminiCustomPrompt();
+        break;
+      case 'clear-gemini-custom-prompt-btn':
+        void handleClearGeminiCustomPrompt();
         break;
       case 'export-data-btn':
         void handleExportData();
@@ -469,8 +478,25 @@ function updateAiModalContextIfOpen() {
   updateAiModalContext();
 }
 
+function toggleAiSettings() {
+  if (!panel) return;
+  const settings = panel.querySelector('#ai-settings') as HTMLElement | null;
+  if (!settings) return;
+  const nextVisible = settings.style.display !== 'block';
+  settings.style.display = nextVisible ? 'block' : 'none';
+  if (nextVisible) {
+    void refreshGeminiCustomPromptUI();
+    const input = panel.querySelector('#gemini-custom-prompt-input') as HTMLTextAreaElement | null;
+    input?.focus();
+  }
+}
+
 function openAiModal() {
   if (!panel) return;
+  const settings = panel.querySelector('#ai-settings') as HTMLElement | null;
+  if (settings) {
+    settings.style.display = 'none';
+  }
   const applySelect = panel.querySelector('#ai-apply-mode') as HTMLSelectElement | null;
   applySelect?.removeAttribute('data-user-changed');
   updateAiModalContext();
@@ -478,6 +504,7 @@ function openAiModal() {
   if (modal) {
     modal.style.display = 'flex';
   }
+  void refreshGeminiCustomPromptUI();
 }
 
 function closeAiModal() {
@@ -555,12 +582,21 @@ function applyAiText(params: {
   updateAiModalContextIfOpen();
 }
 
-function buildGeminiPrompt(params: { instruction: string; mode: string; text: string; context: string }) {
+function buildGeminiPrompt(params: {
+  instruction: string;
+  mode: string;
+  text: string;
+  context: string;
+  customPrompt?: string;
+}) {
   const lines = [
     'あなたは文章編集アシスタントです。',
     '次の「指示」と「対象/文脈」を元に、文章を生成または編集してください。',
     '出力は結果テキストのみ（余計な説明は不要）で返してください。',
     '',
+    ...(params.customPrompt?.trim()
+      ? ['# 常に適用するプロンプト', params.customPrompt.trim(), '']
+      : []),
     '# 指示',
     params.instruction,
     '',
@@ -621,11 +657,13 @@ async function handleAiRun() {
   const targetText = mode === 'replace-all' ? fullText : mode === 'replace-selection' ? selectionText : '';
   const context = mode === 'insert-cursor' ? getCursorContext(fullText, start) : '';
 
+  const customPrompt = await loadGeminiCustomPrompt();
   const prompt = buildGeminiPrompt({
     instruction,
     mode,
     text: targetText,
-    context
+    context,
+    customPrompt: customPrompt || undefined
   });
 
   const prevText = runBtn?.textContent;
@@ -660,6 +698,52 @@ async function handleAiRun() {
 async function loadGeminiApiKey() {
   const result = await chrome.storage.local.get('geminiApiKey');
   return typeof result.geminiApiKey === 'string' ? result.geminiApiKey : null;
+}
+
+async function loadGeminiCustomPrompt() {
+  const result = await chrome.storage.local.get('geminiCustomPrompt');
+  return typeof result.geminiCustomPrompt === 'string' ? result.geminiCustomPrompt : null;
+}
+
+async function refreshGeminiCustomPromptUI() {
+  if (!panel) return;
+  const input = panel.querySelector('#gemini-custom-prompt-input') as HTMLTextAreaElement | null;
+  const status = panel.querySelector('#gemini-custom-prompt-status') as HTMLElement | null;
+  if (!input || !status) return;
+
+  const prompt = await loadGeminiCustomPrompt();
+  input.value = prompt || '';
+  status.textContent = prompt ? '保存済み' : '未保存';
+}
+
+async function handleSaveGeminiCustomPrompt() {
+  if (!panel) return;
+  const input = panel.querySelector('#gemini-custom-prompt-input') as HTMLTextAreaElement | null;
+  const status = panel.querySelector('#gemini-custom-prompt-status') as HTMLElement | null;
+  if (!input || !status) return;
+
+  const prompt = input.value.trim();
+  if (!prompt) {
+    alert('プロンプトを入力してください');
+    return;
+  }
+
+  await chrome.storage.local.set({ geminiCustomPrompt: prompt });
+  status.textContent = '保存済み';
+}
+
+async function handleClearGeminiCustomPrompt() {
+  if (!panel) return;
+  const input = panel.querySelector('#gemini-custom-prompt-input') as HTMLTextAreaElement | null;
+  const status = panel.querySelector('#gemini-custom-prompt-status') as HTMLElement | null;
+  if (!input || !status) return;
+
+  const ok = confirm('保存済みのカスタムプロンプトをクリアしますか？');
+  if (!ok) return;
+
+  await chrome.storage.local.remove('geminiCustomPrompt');
+  input.value = '';
+  status.textContent = '未保存';
 }
 
 async function refreshGeminiApiKeyUI() {
