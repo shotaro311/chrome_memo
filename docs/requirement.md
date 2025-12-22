@@ -10,7 +10,8 @@
 
 - “今見ているページを離れず”にメモする（ページ上のオーバーレイ）
 - 新規メモは下書きとして自動保存され、フォルダ保存で通常メモ化
-- データは端末ローカルを主（本文）、最小限の同期（設定・構造・メタデータ）
+- データは端末ローカルに保存（高速・オフライン用）
+- サインイン時は Supabase に本文も含めて同期（複数デバイスで同一データを扱える）
 
 ### 1.3 対象ユーザー
 
@@ -203,25 +204,31 @@
 
 ## 6. データ保存・同期
 
-## 6.1 保存方針（ハイブリッド）
+## 6.1 保存方針（ローカル + Supabase）
 
-- 本文：`chrome.storage.local`（端末ローカル）
-- 同期：`chrome.storage.sync`
-  - 同期対象は「設定＋構造＋メタデータ」のみ
-  - 本文は同期しない
+- ローカル保存（常に）
+  - 本文/下書き：`chrome.storage.local`
+  - フォルダ/メタデータ/設定：`chrome.storage.sync`
+- サインイン時の同期先：Supabase（`folders` / `memos` / `quick_memo`）
 
-## 6.2 同期するデータ
+## 6.2 同期のタイミング・方式
 
-- 設定（例：ショートカット案内の状態など）
-- 構造
-  - フォルダ一覧（Inboxを含む）
-- メタデータ（最低限）
-  - `id, folderId, title, createdAt, updatedAt, lastOpenedAt`
+- サインイン直後に自動同期
+- 手動同期（「今すぐ同期」）も可能
+- 同期処理は「ローカル→Supabaseへ全件アップロード → Supabase→ローカルへ全件ダウンロード」で整合させる
 
-## 6.3 セキュリティ
+## 6.3 同期するデータ（Supabase）
 
+- フォルダ：`id, name, isSystem, createdAt, updatedAt`
+- 通常メモ：`id, folderId, title, content, createdAt, updatedAt`
+- 下書きメモ：`content, updatedAt`
+- `lastOpenedAt` は同期対象外（Supabaseには保存しない）
+
+## 6.4 セキュリティ
+
+- 認証：Supabase Auth（Google）
+- Supabase側はRLSで「自分のデータのみ」アクセス可能
 - 拡張内での暗号化は行わない
-- Chrome 標準のストレージ保護に依存
 
 ## 7. 上限・制約
 
