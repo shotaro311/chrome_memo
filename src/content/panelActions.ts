@@ -29,6 +29,8 @@ export function createPanelActions(state: PanelActionsState, deps: PanelActionsD
   const { view, getTextarea, escapeHtml } = deps;
   let folderHoverTimer: number | null = null;
   let lastHoverFolderId: string | null = null;
+  let moveTargetNoteId: string | null = null;
+  let moveSourceFolderId: string | null = null;
 
   async function loadData() {
     try {
@@ -679,6 +681,92 @@ export function createPanelActions(state: PanelActionsState, deps: PanelActionsD
     }
   }
 
+  function closeMoveNoteModal() {
+    const panel = getPanel();
+    const modal = panel?.querySelector('#move-note-modal') as HTMLElement | null;
+    if (modal) {
+      modal.style.display = 'none';
+    }
+    moveTargetNoteId = null;
+    moveSourceFolderId = null;
+  }
+
+  function renderMoveFolderSelect(sourceFolderId: string) {
+    const panel = getPanel();
+    if (!panel) return;
+    const folderSelect = panel.querySelector('#move-note-folder') as HTMLSelectElement | null;
+    if (!folderSelect) return;
+
+    const folderOptions = folders
+      .map(folder => `<option value="${folder.id}">${escapeHtml(folder.name)}</option>`)
+      .join('');
+
+    folderSelect.innerHTML = folderOptions;
+    const defaultFolderId = folders.find(f => f.id !== sourceFolderId)?.id ?? sourceFolderId;
+    if (defaultFolderId) {
+      folderSelect.value = defaultFolderId;
+    }
+  }
+
+  async function openMoveNoteModal(noteId: string, sourceFolderId: string) {
+    if (folders.length === 0) {
+      await loadData();
+    }
+    if (folders.filter(f => f.id !== sourceFolderId).length === 0) {
+      alert('移動先フォルダがありません');
+      return;
+    }
+
+    moveTargetNoteId = noteId;
+    moveSourceFolderId = sourceFolderId;
+    renderMoveFolderSelect(sourceFolderId);
+
+    const panel = getPanel();
+    const modal = panel?.querySelector('#move-note-modal') as HTMLElement | null;
+    if (modal) {
+      modal.style.display = 'flex';
+    }
+  }
+
+  async function handleConfirmMoveNote() {
+    const noteId = moveTargetNoteId;
+    const fromFolderId = moveSourceFolderId;
+    if (!noteId || !fromFolderId) return;
+
+    const panel = getPanel();
+    const folderSelect = panel?.querySelector('#move-note-folder') as HTMLSelectElement | null;
+    if (!folderSelect) return;
+    const folderId = folderSelect.value;
+    if (!folderId) return;
+
+    if (folderId === fromFolderId) {
+      closeMoveNoteModal();
+      return;
+    }
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: MessageType.UPDATE_NOTE,
+        noteId,
+        folderId
+      });
+
+      if (response.success) {
+        if (panelState.activeTabId === noteId || panelState.rightTabId === noteId) {
+          panelState.currentFolderId = folderId;
+        }
+        closeMoveNoteModal();
+        renderFileList(fromFolderId);
+        alert('メモを移動しました');
+      } else {
+        alert(`エラー: ${response.error}`);
+      }
+    } catch (error) {
+      console.error('[Content] Error moving note:', error);
+      alert('移動中にエラーが発生しました');
+    }
+  }
+
   function renderFileList(folderId: string) {
     const panel = getPanel();
     if (!panel) return;
@@ -709,6 +797,7 @@ export function createPanelActions(state: PanelActionsState, deps: PanelActionsD
               <div class="file-item-preview">${escapeHtml(note.content.substring(0, 50))}${note.content.length > 50 ? '...' : ''}</div>
             </div>
             <div class="file-item-actions">
+              <button class="file-action-btn move-btn" data-note-id="${note.id}" title="移動">📁</button>
               <button class="file-action-btn edit-btn" data-note-id="${note.id}" title="名前を変更">✏️</button>
               <button class="file-action-btn delete-btn" data-note-id="${note.id}" title="削除">🗑️</button>
             </div>
@@ -733,6 +822,16 @@ export function createPanelActions(state: PanelActionsState, deps: PanelActionsD
               const noteId = (e.currentTarget as HTMLElement).getAttribute('data-note-id');
               if (noteId) {
                 await handleRenameNote(noteId, folderId);
+              }
+            });
+          });
+
+          fileList.querySelectorAll('.move-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              const noteId = (e.currentTarget as HTMLElement).getAttribute('data-note-id');
+              if (noteId) {
+                void openMoveNoteModal(noteId, folderId);
               }
             });
           });
@@ -858,6 +957,7 @@ export function createPanelActions(state: PanelActionsState, deps: PanelActionsD
   return {
     closeAuthModal,
     closeFileModal,
+    closeMoveNoteModal,
     closeSaveModal,
     closeSplitModal,
     flushDraftSave,
@@ -865,6 +965,7 @@ export function createPanelActions(state: PanelActionsState, deps: PanelActionsD
     handleAuthSignOut,
     handleAuthSyncNow,
     handleConfirmSave,
+    handleConfirmMoveNote,
     handleDeleteNote,
     handleMemoInput,
     handleNewNote,

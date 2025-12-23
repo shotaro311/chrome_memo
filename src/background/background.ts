@@ -256,7 +256,8 @@ async function handleMessage(message: Message): Promise<Response> {
       case MessageType.UPDATE_NOTE: {
         const note = await updateNote(message.noteId, {
           title: message.title,
-          content: message.content
+          content: message.content,
+          folderId: message.folderId
         });
         return { success: true, data: note };
       }

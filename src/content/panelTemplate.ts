@@ -95,6 +95,26 @@ export function getPanelHtml(): string {
       </div>
     </div>
 
+    <!-- メモ移動モーダル -->
+    <div class="save-modal" id="move-note-modal" style="display: none;">
+      <div class="save-modal-content">
+        <div class="save-modal-header">
+          <h3>メモを移動</h3>
+          <button class="close-modal-btn" id="close-move-note-modal-btn">×</button>
+        </div>
+        <div class="save-modal-body">
+          <div class="form-group">
+            <label for="move-note-folder">移動先フォルダ:</label>
+            <select id="move-note-folder" class="save-select"></select>
+          </div>
+          <div class="save-modal-actions">
+            <button class="btn-primary" id="confirm-move-note-btn">移動</button>
+            <button class="btn-secondary" id="cancel-move-note-btn">キャンセル</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 認証モーダル -->
     <div class="auth-modal" id="auth-modal" style="display: none;">
       <div class="auth-modal-content">

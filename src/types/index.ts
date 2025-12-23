@@ -278,6 +278,7 @@ export interface UpdateNoteMessage extends BaseMessage {
   noteId: string;
   title?: string;
   content?: string;
+  folderId?: string;
 }
 
 /**
@@ -431,7 +432,7 @@ export type Response<T = any> = SuccessResponse<T> | ErrorResponse;
  */
 export const LIMITS = {
   MAX_FOLDERS: 30,
-  MAX_NOTES_PER_FOLDER: 10,
+  MAX_NOTES_PER_FOLDER: 50,
   MAX_TOTAL_NOTES: 300,
   MAX_NOTE_LENGTH: 20000,
   MAX_RECENT_NOTES: 3,

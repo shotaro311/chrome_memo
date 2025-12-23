@@ -318,24 +318,47 @@ export async function createNote(
  */
 export async function updateNote(
   noteId: string,
-  updates: { title?: string; content?: string }
+  updates: { title?: string; content?: string; folderId?: string }
 ): Promise<Note> {
   const note = await getNote(noteId);
   if (!note) {
     throw new Error('メモが見つかりません');
   }
 
-  // タイトル更新の場合、重複チェック
-  if (updates.title !== undefined) {
-    const trimmedTitle = updates.title.trim() || generateDefaultTitle();
-    const folderNotes = await getNotesInFolder(note.folderId);
+  const nextFolderId = updates.folderId ?? note.folderId;
+
+  // フォルダ移動の場合、フォルダ存在/上限チェック
+  if (updates.folderId !== undefined && updates.folderId !== note.folderId) {
+    const folders = await getFolders();
+    const folder = folders.find(f => f.id === nextFolderId);
+    if (!folder) {
+      throw new Error('フォルダが見つかりません');
+    }
+
+    const folderNotes = await getNotesInFolder(nextFolderId);
+    if (folderNotes.length >= LIMITS.MAX_NOTES_PER_FOLDER) {
+      throw new Error(`1フォルダあたりのメモ数上限（${LIMITS.MAX_NOTES_PER_FOLDER}）に達しています`);
+    }
+  }
+
+  // タイトル更新/フォルダ移動の重複チェック
+  const nextTitle = updates.title !== undefined ? updates.title.trim() || generateDefaultTitle() : note.title;
+  if (updates.title !== undefined || (updates.folderId !== undefined && updates.folderId !== note.folderId)) {
+    const folderNotes = await getNotesInFolder(nextFolderId);
     const isDuplicate = folderNotes.some(
-      n => n.id !== noteId && n.title.toLowerCase() === trimmedTitle.toLowerCase()
+      n => n.id !== noteId && n.title.toLowerCase() === nextTitle.toLowerCase()
     );
     if (isDuplicate) {
       throw new Error('同じタイトルのメモが既に存在します');
     }
-    note.title = trimmedTitle;
+  }
+
+  if (updates.folderId !== undefined) {
+    note.folderId = nextFolderId;
+  }
+
+  if (updates.title !== undefined) {
+    note.title = nextTitle;
   }
 
   // 本文更新

@@ -282,6 +282,10 @@ function setupEventListeners() {
         e.stopPropagation();
         actions.closeSaveModal();
         break;
+      case 'close-move-note-modal-btn':
+        e.stopPropagation();
+        actions.closeMoveNoteModal();
+        break;
       case 'close-auth-modal-btn':
         e.stopPropagation();
         actions.closeAuthModal();
@@ -299,6 +303,12 @@ function setupEventListeners() {
         break;
       case 'cancel-save-btn':
         actions.closeSaveModal();
+        break;
+      case 'confirm-move-note-btn':
+        void actions.handleConfirmMoveNote();
+        break;
+      case 'cancel-move-note-btn':
+        actions.closeMoveNoteModal();
         break;
       case 'auth-sign-in-btn':
         void actions.handleAuthSignIn();
