@@ -29,6 +29,9 @@ export function createPanelActions(state: PanelActionsState, deps: PanelActionsD
   const { view, getTextarea, escapeHtml } = deps;
   let folderHoverTimer: number | null = null;
   let lastHoverFolderId: string | null = null;
+  let folderContextMenuFolderId: string | null = null;
+  let isFolderDragging = false;
+  let draggingFolderId: string | null = null;
   let moveTargetNoteId: string | null = null;
   let moveSourceFolderId: string | null = null;
 
@@ -231,6 +234,139 @@ export function createPanelActions(state: PanelActionsState, deps: PanelActionsD
     }
     if (fileModal) {
       fileModal.style.display = 'flex';
+    }
+  }
+
+  function getFolderById(folderId: string) {
+    return folders.find(folder => folder.id === folderId) || null;
+  }
+
+  function closeFolderContextMenu() {
+    const panel = getPanel();
+    if (!panel) return;
+    const menu = panel.querySelector('#folder-context-menu') as HTMLElement | null;
+    if (!menu) return;
+    menu.style.display = 'none';
+    menu.removeAttribute('data-folder-id');
+    folderContextMenuFolderId = null;
+  }
+
+  function openFolderContextMenu(folderId: string, clientX: number, clientY: number) {
+    const panel = getPanel();
+    if (!panel) return;
+    const menu = panel.querySelector('#folder-context-menu') as HTMLElement | null;
+    if (!menu) return;
+    const folder = getFolderById(folderId);
+    if (!folder || folder.isSystem) return;
+
+    closeFolderContextMenu();
+    folderContextMenuFolderId = folderId;
+    menu.setAttribute('data-folder-id', folderId);
+    menu.style.display = 'block';
+    menu.style.left = '0px';
+    menu.style.top = '0px';
+
+    const panelRect = panel.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    let left = clientX - panelRect.left;
+    let top = clientY - panelRect.top;
+    const maxLeft = Math.max(8, panelRect.width - menuRect.width - 8);
+    const maxTop = Math.max(8, panelRect.height - menuRect.height - 8);
+    left = Math.min(Math.max(8, left), maxLeft);
+    top = Math.min(Math.max(8, top), maxTop);
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+  }
+
+  async function handleFolderContextRename() {
+    const folderId = folderContextMenuFolderId;
+    closeFolderContextMenu();
+    if (!folderId) return;
+    const folder = getFolderById(folderId);
+    if (!folder || folder.isSystem) return;
+
+    const nextName = prompt('新しいフォルダ名を入力してください', folder.name);
+    if (nextName === null) return;
+    const trimmedName = nextName.trim();
+    if (!trimmedName) {
+      alert('フォルダ名を入力してください');
+      return;
+    }
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: MessageType.RENAME_FOLDER,
+        folderId,
+        newName: trimmedName
+      });
+      if (!response.success) {
+        alert(`エラー: ${response.error}`);
+        return;
+      }
+      await loadData();
+      renderFolderTabs();
+      renderFileList(panelState.currentFolderId || INBOX_FOLDER_ID);
+    } catch (error) {
+      console.error('[Content] Error renaming folder:', error);
+      alert('フォルダ名の変更に失敗しました');
+    }
+  }
+
+  async function handleFolderContextDelete() {
+    const folderId = folderContextMenuFolderId;
+    closeFolderContextMenu();
+    if (!folderId) return;
+    const folder = getFolderById(folderId);
+    if (!folder || folder.isSystem) return;
+
+    const ok = confirm('フォルダを削除しますか？配下のメモも削除されます。');
+    if (!ok) return;
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: MessageType.DELETE_FOLDER,
+        folderId
+      });
+      if (!response.success) {
+        alert(`エラー: ${response.error}`);
+        return;
+      }
+      if (panelState.currentFolderId === folderId) {
+        panelState.currentFolderId = INBOX_FOLDER_ID;
+      }
+      await loadData();
+      renderFolderTabs();
+      renderFileList(panelState.currentFolderId || INBOX_FOLDER_ID);
+    } catch (error) {
+      console.error('[Content] Error deleting folder:', error);
+      alert('フォルダの削除に失敗しました');
+    }
+  }
+
+  function getFolderOrderFromTabs(folderTabs: HTMLElement) {
+    return Array.from(folderTabs.querySelectorAll('.folder-tab'))
+      .map(tab => tab.getAttribute('data-folder-id'))
+      .filter((id): id is string => Boolean(id) && id !== INBOX_FOLDER_ID);
+  }
+
+  async function persistFolderOrder(folderTabs: HTMLElement | null) {
+    if (!folderTabs) return;
+    const order = getFolderOrderFromTabs(folderTabs);
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: MessageType.UPDATE_FOLDER_ORDER,
+        order
+      });
+      if (!response.success) {
+        alert(`エラー: ${response.error}`);
+        return;
+      }
+      await loadData();
+      renderFolderTabs();
+      renderFileList(panelState.currentFolderId || INBOX_FOLDER_ID);
+    } catch (error) {
+      console.error('[Content] Error updating folder order:', error);
+      alert('フォルダの並び替えに失敗しました');
     }
   }
 
@@ -657,6 +793,7 @@ export function createPanelActions(state: PanelActionsState, deps: PanelActionsD
     if (fileModal) {
       fileModal.style.display = 'none';
     }
+    closeFolderContextMenu();
   }
 
   function closeSaveModal() {
@@ -853,20 +990,25 @@ export function createPanelActions(state: PanelActionsState, deps: PanelActionsD
     const panel = getPanel();
     if (!panel) return;
 
-    const folderTabs = panel.querySelector('#modal-folder-tabs');
+    const folderTabs = panel.querySelector('#modal-folder-tabs') as HTMLElement | null;
     if (!folderTabs) return;
 
     folderTabs.innerHTML = folders
-      .map(
-        folder => `
+      .map(folder => {
+        const isActive = folder.id === panelState.currentFolderId;
+        const activeClass = isActive ? 'active' : '';
+        const systemClass = folder.isSystem ? 'is-system' : '';
+        const draggableAttr = folder.isSystem ? '' : 'draggable="true"';
+        return `
       <button
-        class="folder-tab ${folder.id === panelState.currentFolderId ? 'active' : ''}"
+        class="folder-tab ${activeClass} ${systemClass}"
         data-folder-id="${folder.id}"
+        ${draggableAttr}
       >
         ${escapeHtml(folder.name)}
       </button>
-    `
-      )
+    `;
+      })
       .join('');
 
     if (!folderTabs.hasAttribute('data-hover-bound')) {
@@ -879,8 +1021,25 @@ export function createPanelActions(state: PanelActionsState, deps: PanelActionsD
       });
     }
 
+    if (!folderTabs.hasAttribute('data-drag-bound')) {
+      folderTabs.setAttribute('data-drag-bound', 'true');
+      folderTabs.addEventListener('dragover', (e) => {
+        const event = e as DragEvent;
+        if (!isFolderDragging || !draggingFolderId) return;
+        if (event.target !== folderTabs) return;
+        event.preventDefault();
+        const draggingEl = folderTabs.querySelector(
+          `.folder-tab[data-folder-id="${draggingFolderId}"]`
+        ) as HTMLElement | null;
+        if (draggingEl) {
+          folderTabs.appendChild(draggingEl);
+        }
+      });
+    }
+
     folderTabs.querySelectorAll('.folder-tab').forEach(tab => {
       tab.addEventListener('pointerenter', () => {
+        if (isFolderDragging) return;
         const folderId = tab.getAttribute('data-folder-id');
         if (!folderId) return;
         if (folderId === panelState.currentFolderId || folderId === lastHoverFolderId) return;
@@ -896,16 +1055,83 @@ export function createPanelActions(state: PanelActionsState, deps: PanelActionsD
       });
 
       tab.addEventListener('click', async (e) => {
+        if (isFolderDragging) return;
         const folderId = (e.target as HTMLElement).getAttribute('data-folder-id');
         if (folderId) {
           if (folderHoverTimer) {
             clearTimeout(folderHoverTimer);
             folderHoverTimer = null;
           }
+          closeFolderContextMenu();
           panelState.currentFolderId = folderId;
           renderFolderTabs();
           renderFileList(folderId);
         }
+      });
+
+      tab.addEventListener('contextmenu', (e) => {
+        const event = e as MouseEvent;
+        if (isFolderDragging) return;
+        const folderId = tab.getAttribute('data-folder-id');
+        if (!folderId) return;
+        const folder = getFolderById(folderId);
+        if (!folder || folder.isSystem) return;
+        event.preventDefault();
+        event.stopPropagation();
+        openFolderContextMenu(folderId, event.clientX, event.clientY);
+      });
+
+      const folderId = tab.getAttribute('data-folder-id');
+      const folder = folderId ? getFolderById(folderId) : null;
+      if (!folder || folder.isSystem) return;
+
+      tab.addEventListener('dragstart', (e) => {
+        const event = e as DragEvent;
+        if (!folderId) return;
+        isFolderDragging = true;
+        draggingFolderId = folderId;
+        closeFolderContextMenu();
+        tab.classList.add('is-dragging');
+        if (folderHoverTimer) {
+          clearTimeout(folderHoverTimer);
+          folderHoverTimer = null;
+        }
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', folderId);
+        }
+      });
+
+      tab.addEventListener('dragover', (e) => {
+        const event = e as DragEvent;
+        if (!isFolderDragging || !draggingFolderId || draggingFolderId === folderId) return;
+        event.preventDefault();
+        const draggingEl = folderTabs.querySelector(
+          `.folder-tab[data-folder-id="${draggingFolderId}"]`
+        ) as HTMLElement | null;
+        if (!draggingEl) return;
+        const rect = tab.getBoundingClientRect();
+        const insertBefore = event.clientX < rect.left + rect.width / 2;
+        if (insertBefore) {
+          if (tab.previousElementSibling !== draggingEl) {
+            folderTabs.insertBefore(draggingEl, tab);
+          }
+        } else {
+          const nextSibling = tab.nextElementSibling;
+          if (nextSibling !== draggingEl) {
+            folderTabs.insertBefore(draggingEl, nextSibling);
+          }
+        }
+      });
+
+      tab.addEventListener('dragend', async (e) => {
+        const event = e as DragEvent;
+        event.preventDefault();
+        tab.classList.remove('is-dragging');
+        if (!isFolderDragging) return;
+        isFolderDragging = false;
+        draggingFolderId = null;
+        await persistFolderOrder(folderTabs);
       });
     });
   }
@@ -957,6 +1183,7 @@ export function createPanelActions(state: PanelActionsState, deps: PanelActionsD
   return {
     closeAuthModal,
     closeFileModal,
+    closeFolderContextMenu,
     closeMoveNoteModal,
     closeSaveModal,
     closeSplitModal,
@@ -967,6 +1194,8 @@ export function createPanelActions(state: PanelActionsState, deps: PanelActionsD
     handleConfirmSave,
     handleConfirmMoveNote,
     handleDeleteNote,
+    handleFolderContextDelete,
+    handleFolderContextRename,
     handleMemoInput,
     handleNewNote,
     handleOpenFile,

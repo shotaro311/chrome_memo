@@ -62,6 +62,7 @@ export interface LocalStorageData {
  */
 export interface SyncStorageData {
   folders: Record<string, Folder>; // folderId -> Folder
+  folderOrder?: string[]; // 並び順（Inbox除外）
   noteMetadata: Record<string, NoteMetadata>; // noteId -> NoteMetadata
   settings: AppSettings;
 }
@@ -129,6 +130,7 @@ export enum MessageType {
   CREATE_FOLDER = 'CREATE_FOLDER',
   DELETE_FOLDER = 'DELETE_FOLDER',
   RENAME_FOLDER = 'RENAME_FOLDER',
+  UPDATE_FOLDER_ORDER = 'UPDATE_FOLDER_ORDER',
 
   // メモ操作
   CREATE_NOTE = 'CREATE_NOTE',
@@ -262,6 +264,14 @@ export interface RenameFolderMessage extends BaseMessage {
 }
 
 /**
+ * フォルダ並び順更新メッセージ
+ */
+export interface UpdateFolderOrderMessage extends BaseMessage {
+  type: MessageType.UPDATE_FOLDER_ORDER;
+  order: string[]; // Inbox除外
+}
+
+/**
  * メモ作成メッセージ
  */
 export interface CreateNoteMessage extends BaseMessage {
@@ -384,6 +394,7 @@ export type Message =
   | CreateFolderMessage
   | DeleteFolderMessage
   | RenameFolderMessage
+  | UpdateFolderOrderMessage
   | CreateNoteMessage
   | UpdateNoteMessage
   | DeleteNoteMessage

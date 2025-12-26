@@ -99,13 +99,39 @@ export async function initializeStorage(): Promise<void> {
  */
 export async function getFolders(): Promise<Folder[]> {
   const folders = (await getSyncValue('folders')) || {};
+  const folderOrder = await getSyncValue('folderOrder');
+  const values = Object.values(folders);
 
-  // Inbox を先頭、その後はフォルダ名昇順
-  return Object.values(folders).sort((a, b) => {
-    if (a.id === INBOX_FOLDER_ID) return -1;
-    if (b.id === INBOX_FOLDER_ID) return 1;
-    return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
-  });
+  if (!folderOrder || folderOrder.length === 0) {
+    // Inbox を先頭、その後はフォルダ名昇順
+    return values.sort((a, b) => {
+      if (a.id === INBOX_FOLDER_ID) return -1;
+      if (b.id === INBOX_FOLDER_ID) return 1;
+      return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+    });
+  }
+
+  const ordered: Folder[] = [];
+  const used = new Set<string>();
+  const inbox = folders[INBOX_FOLDER_ID];
+  if (inbox) {
+    ordered.push(inbox);
+    used.add(INBOX_FOLDER_ID);
+  }
+
+  for (const id of folderOrder) {
+    if (id === INBOX_FOLDER_ID || used.has(id)) continue;
+    const folder = folders[id];
+    if (folder) {
+      ordered.push(folder);
+      used.add(id);
+    }
+  }
+
+  const remaining = values.filter(folder => !used.has(folder.id));
+  remaining.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+  ordered.push(...remaining);
+  return ordered;
 }
 
 /**
@@ -142,6 +168,12 @@ export async function createFolder(name: string): Promise<Folder> {
   const folderMap = (await getSyncValue('folders')) || {};
   const updatedFolders = { ...folderMap, [newFolder.id]: newFolder };
   await setSyncValue('folders', updatedFolders);
+  const folderOrder = await getSyncValue('folderOrder');
+  if (folderOrder && folderOrder.length > 0) {
+    const nextOrder = folderOrder.filter(id => id !== newFolder.id && id !== INBOX_FOLDER_ID);
+    nextOrder.push(newFolder.id);
+    await setSyncValue('folderOrder', nextOrder);
+  }
 
   return newFolder;
 }
@@ -172,6 +204,16 @@ export async function deleteFolder(folderId: string): Promise<void> {
   const updatedFolders = { ...folderMap };
   delete updatedFolders[folderId];
   await setSyncValue('folders', updatedFolders);
+
+  const folderOrder = await getSyncValue('folderOrder');
+  if (folderOrder && folderOrder.length > 0) {
+    const nextOrder = folderOrder.filter(id => id !== folderId && id !== INBOX_FOLDER_ID);
+    if (nextOrder.length === 0) {
+      await chrome.storage.sync.remove('folderOrder');
+    } else {
+      await setSyncValue('folderOrder', nextOrder);
+    }
+  }
 }
 
 /**
@@ -208,6 +250,30 @@ export async function renameFolder(folderId: string, newName: string): Promise<v
     [folderId]: { ...folder, name: trimmedName }
   };
   await setSyncValue('folders', updatedFolders);
+}
+
+/**
+ * フォルダ順序を更新
+ */
+export async function updateFolderOrder(order: string[]): Promise<void> {
+  const folderMap = (await getSyncValue('folders')) || {};
+  const seen = new Set<string>();
+  const nextOrder: string[] = [];
+
+  for (const id of order) {
+    if (id === INBOX_FOLDER_ID || seen.has(id)) continue;
+    if (folderMap[id]) {
+      nextOrder.push(id);
+      seen.add(id);
+    }
+  }
+
+  if (nextOrder.length === 0) {
+    await chrome.storage.sync.remove('folderOrder');
+    return;
+  }
+
+  await setSyncValue('folderOrder', nextOrder);
 }
 
 // ========================================

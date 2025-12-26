@@ -249,9 +249,6 @@ function setupEventListeners() {
         e.preventDefault();
         closePanel();
         break;
-      case 'new-note-btn':
-        void actions.handleNewNote();
-        break;
       case 'save-as-btn':
         void actions.handleSaveAs();
         break;
@@ -298,6 +295,14 @@ function setupEventListeners() {
         e.stopPropagation();
         closeAiModal();
         break;
+      case 'folder-context-rename':
+        e.stopPropagation();
+        void actions.handleFolderContextRename();
+        break;
+      case 'folder-context-delete':
+        e.stopPropagation();
+        void actions.handleFolderContextDelete();
+        break;
       case 'confirm-save-btn':
         void actions.handleConfirmSave();
         break;
@@ -340,17 +345,13 @@ function setupEventListeners() {
       case 'toggle-panel-size-btn':
         handleTogglePanelSize();
         break;
-      case 'ai-run-btn':
-        void handleAiRun();
-        break;
     }
   });
-
-  panel.addEventListener('change', (e) => {
-    const target = e.target as HTMLElement;
-    if (target?.id === 'ai-apply-mode') {
-      target.setAttribute('data-user-changed', 'true');
-    }
+  const aiPromptInput = panel.querySelector('#ai-prompt-input') as HTMLTextAreaElement | null;
+  aiPromptInput?.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
+    e.preventDefault();
+    void handleAiRun();
   });
 
   const memoTextareaLeft = panel.querySelector('#memo-textarea-left') as HTMLTextAreaElement;
@@ -377,7 +378,12 @@ function setupEventListeners() {
   const fileModal = panel.querySelector('#file-modal') as HTMLElement | null;
   if (fileModal && !fileModal.hasAttribute('data-hover-close')) {
     fileModal.setAttribute('data-hover-close', 'true');
-    fileModal.addEventListener('pointerleave', () => {
+    fileModal.addEventListener('pointerleave', (e) => {
+      const related = (e as PointerEvent).relatedTarget as Node | null;
+      const contextMenu = panel?.querySelector('#folder-context-menu') as HTMLElement | null;
+      if (related && (fileModal.contains(related) || contextMenu?.contains(related))) {
+        return;
+      }
       actions.closeFileModal();
     });
   }
@@ -400,11 +406,10 @@ function handleDocumentClick(e: MouseEvent) {
   if (!panel) return;
   const target = e.target as HTMLElement;
   const menu = panel.querySelector('#font-size-menu') as HTMLElement | null;
-  if (!menu) return;
-  if (target.closest('#font-size-control')) {
-    return;
+  if (menu && !target.closest('#font-size-control')) {
+    closeFontSizeMenu();
   }
-  closeFontSizeMenu();
+  actions.closeFolderContextMenu();
 }
 
 function toggleFontSizeMenu() {
@@ -459,25 +464,28 @@ function updateAiModalContext() {
   const statusEl = panel.querySelector('#ai-selection-status') as HTMLElement | null;
   const paneEl = panel.querySelector('#ai-target-pane') as HTMLElement | null;
   const previewEl = panel.querySelector('#ai-selection-preview') as HTMLElement | null;
-  const applySelect = panel.querySelector('#ai-apply-mode') as HTMLSelectElement | null;
   const info = getFocusedTextareaInfo();
-  if (!statusEl || !paneEl || !previewEl || !applySelect || !info) return;
+  if (!info) return;
 
   const hasSelection = info.start !== info.end;
   const selectionCount = Math.max(0, info.end - info.start);
-  statusEl.textContent = hasSelection ? `あり（${selectionCount}文字）` : 'なし';
-  paneEl.textContent = info.pane === 'right' ? '右' : '左';
-
-  if (hasSelection) {
-    previewEl.style.display = 'block';
-    previewEl.textContent = formatSelectionPreview(info.text);
-  } else {
-    previewEl.style.display = 'none';
-    previewEl.textContent = '';
+  if (statusEl) {
+    statusEl.textContent = hasSelection ? `あり（${selectionCount}文字）` : 'なし';
+  }
+  if (paneEl) {
+    paneEl.textContent = info.pane === 'right' ? '右' : '左';
   }
 
-  if (applySelect.getAttribute('data-user-changed') !== 'true') {
-    applySelect.value = hasSelection ? 'replace-selection' : 'insert-cursor';
+  if (hasSelection) {
+    if (previewEl) {
+      previewEl.style.display = 'block';
+      previewEl.textContent = formatSelectionPreview(info.text);
+    }
+  } else {
+    if (previewEl) {
+      previewEl.style.display = 'none';
+      previewEl.textContent = '';
+    }
   }
 }
 
@@ -507,14 +515,14 @@ function openAiModal() {
   if (settings) {
     settings.style.display = 'none';
   }
-  const applySelect = panel.querySelector('#ai-apply-mode') as HTMLSelectElement | null;
-  applySelect?.removeAttribute('data-user-changed');
   updateAiModalContext();
   const modal = panel.querySelector('#ai-modal') as HTMLElement | null;
   if (modal) {
     modal.style.display = 'flex';
   }
   void refreshGeminiCustomPromptUI();
+  const promptInput = panel.querySelector('#ai-prompt-input') as HTMLTextAreaElement | null;
+  promptInput?.focus();
 }
 
 function closeAiModal() {
@@ -637,12 +645,21 @@ function getCursorContext(value: string, cursor: number) {
   return `${omittedPrefix}${prefix}⟂${suffix}${omittedSuffix}`;
 }
 
+function getAiApplyMode(info: { start: number; end: number; textarea: HTMLTextAreaElement }) {
+  if (info.start === info.end) {
+    return 'insert-cursor';
+  }
+  const fullLength = info.textarea.value.length;
+  if (info.start === 0 && info.end === fullLength) {
+    return 'replace-all';
+  }
+  return 'replace-selection';
+}
+
 async function handleAiRun() {
   if (!panel) return;
   const promptEl = panel.querySelector('#ai-prompt-input') as HTMLTextAreaElement | null;
-  const applySelect = panel.querySelector('#ai-apply-mode') as HTMLSelectElement | null;
-  const runBtn = panel.querySelector('#ai-run-btn') as HTMLButtonElement | null;
-  if (!promptEl || !applySelect) return;
+  if (!promptEl) return;
 
   const instruction = promptEl.value.trim();
   if (!instruction) {
@@ -654,12 +671,7 @@ async function handleAiRun() {
   if (!info) return;
 
   const { pane, textarea, start, end } = info;
-  const mode = applySelect.value;
-
-  if (mode === 'replace-selection' && start === end) {
-    alert('選択範囲がありません（適用先を変更するか、テキストを選択してください）');
-    return;
-  }
+  const mode = getAiApplyMode(info);
 
   const fullText = textarea.value;
   const selectionText = fullText.slice(start, end);
@@ -676,11 +688,8 @@ async function handleAiRun() {
     customPrompt: customPrompt || undefined
   });
 
-  const prevText = runBtn?.textContent;
-  if (runBtn) {
-    runBtn.disabled = true;
-    runBtn.textContent = '実行中...';
-  }
+  const wasDisabled = promptEl.disabled;
+  promptEl.disabled = true;
 
   try {
     const response = await chrome.runtime.sendMessage({
@@ -698,10 +707,7 @@ async function handleAiRun() {
   } catch (error) {
     alert(`AIの実行に失敗しました: ${String(error)}`);
   } finally {
-    if (runBtn) {
-      runBtn.disabled = false;
-      runBtn.textContent = prevText || '実行';
-    }
+    promptEl.disabled = wasDisabled;
   }
 }
 

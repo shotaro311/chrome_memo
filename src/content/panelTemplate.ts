@@ -5,12 +5,10 @@ export function getPanelHtml(): string {
     <div class="panel-header">
       <div class="header-left">
         <h2 id="memo-title">メモ</h2>
-        <button class="header-btn" id="new-note-btn" title="新規メモ">➕</button>
         <button class="header-btn" id="save-as-btn" title="名前を付けて保存">💾</button>
         <button class="header-btn" id="save-btn" title="上書き保存" style="display: none;">📥</button>
         <button class="header-btn" id="open-file-btn" title="ファイルを開く">📂</button>
         <button class="header-btn" id="split-view-btn" title="スプリットビュー">⇔</button>
-        <button class="header-btn" id="export-data-btn" title="メモをエクスポート">📤</button>
         <div class="font-size-control" id="font-size-control">
           <button class="header-btn" id="font-size-btn" title="フォントサイズ">🔠</button>
           <div class="font-size-menu" id="font-size-menu">
@@ -20,6 +18,7 @@ export function getPanelHtml(): string {
         </div>
         <button class="header-btn" id="ai-btn" title="AI">🤖</button>
         <button class="header-btn" id="auth-btn" title="同期 / サインイン">👤</button>
+        <button class="header-btn" id="export-data-btn" title="メモをエクスポート">📤</button>
         <span class="memo-current-label" id="memo-current-label"></span>
       </div>
       <div class="header-right">
@@ -180,11 +179,6 @@ export function getPanelHtml(): string {
             </div>
             <p class="api-key-status" id="gemini-custom-prompt-status">未保存</p>
           </div>
-          <div class="ai-status-row">
-            <div class="ai-status-item">選択: <span id="ai-selection-status">なし</span></div>
-            <div class="ai-status-item">対象: <span id="ai-target-pane">左</span></div>
-          </div>
-          <div class="ai-selection-preview" id="ai-selection-preview" style="display: none;"></div>
           <div class="form-group">
             <label for="ai-prompt-input">指示</label>
             <textarea
@@ -192,22 +186,16 @@ export function getPanelHtml(): string {
               class="save-input ai-textarea"
               placeholder="例: 要約して、箇条書きで"
             ></textarea>
-          </div>
-          <div class="ai-apply-row">
-            <div class="form-group ai-apply-select">
-              <label for="ai-apply-mode">適用先</label>
-              <select id="ai-apply-mode" class="save-select">
-                <option value="replace-selection">選択を置換</option>
-                <option value="insert-cursor">カーソルに挿入</option>
-                <option value="replace-all">全文を置換</option>
-              </select>
-            </div>
-            <div class="ai-apply-actions">
-              <button class="btn-primary" id="ai-run-btn">実行して反映</button>
-            </div>
+            <div class="ai-hint">Enterで実行 / Shift+Enterで改行</div>
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- フォルダメニュー -->
+    <div class="folder-context-menu" id="folder-context-menu" style="display: none;">
+      <button class="folder-context-item" id="folder-context-rename">名前を変更</button>
+      <button class="folder-context-item" id="folder-context-delete">削除</button>
     </div>
 
     <!-- スプリット選択モーダル -->

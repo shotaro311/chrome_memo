@@ -5,6 +5,7 @@ import {
   createFolder,
   deleteFolder,
   renameFolder,
+  updateFolderOrder,
   getNotesInFolder,
   getNote,
   getAllNotes,
@@ -21,7 +22,7 @@ import {
   updateSettings
 } from '../utils/storage';
 import { getAuthState, onAuthStateChange, signInWithGoogle, signOut } from '../lib/auth';
-import { fullSync } from '../lib/sync';
+import { deleteFolder as deleteFolderSync, deleteMemo, fullSync } from '../lib/sync';
 import { chromeStorage } from '../lib/chromeStorage';
 import { generateGeminiText } from '../lib/gemini';
 
@@ -229,11 +230,20 @@ async function handleMessage(message: Message): Promise<Response> {
 
       case MessageType.DELETE_FOLDER: {
         await deleteFolder(message.folderId);
+        const syncResult = await deleteFolderSync(message.folderId);
+        if (!syncResult.success && syncResult.error !== 'Not authenticated') {
+          console.error('[Background] Delete folder sync error:', syncResult.error);
+        }
         return { success: true, data: null };
       }
 
       case MessageType.RENAME_FOLDER: {
         await renameFolder(message.folderId, message.newName);
+        return { success: true, data: null };
+      }
+
+      case MessageType.UPDATE_FOLDER_ORDER: {
+        await updateFolderOrder(message.order);
         return { success: true, data: null };
       }
 
@@ -264,6 +274,10 @@ async function handleMessage(message: Message): Promise<Response> {
 
       case MessageType.DELETE_NOTE: {
         await deleteNote(message.noteId);
+        const syncResult = await deleteMemo(message.noteId);
+        if (!syncResult.success && syncResult.error !== 'Not authenticated') {
+          console.error('[Background] Delete memo sync error:', syncResult.error);
+        }
         return { success: true, data: null };
       }
 
