@@ -1,5 +1,5 @@
 import { supabase, SupabaseFolder, SupabaseMemo, SupabaseQuickMemo } from './supabase';
-import { Folder, Note, QuickMemo } from '../types';
+import { Folder, Note, NoteMetadata, QuickMemo } from '../types';
 import { getAuthState } from './auth';
 
 // =========================================
@@ -8,6 +8,8 @@ import { getAuthState } from './auth';
 
 let isSyncing = false;
 let lastSyncTime = 0;
+
+const LAST_SYNC_USER_ID_KEY = 'lastSyncedSupabaseUserId';
 
 /**
  * フォルダをSupabaseにアップロード
@@ -287,7 +289,7 @@ export async function fullSync(): Promise<{ success: boolean; error?: string }> 
   }
 
   const authState = await getAuthState();
-  if (!authState.isAuthenticated) {
+  if (!authState.isAuthenticated || !authState.userId) {
     return { success: false, error: 'Not authenticated' };
   }
 
@@ -296,45 +298,87 @@ export async function fullSync(): Promise<{ success: boolean; error?: string }> 
   try {
     console.log('[Sync] Starting full sync...');
 
-    // ローカルデータを取得
-    const localData = await chrome.storage.local.get(['notes', 'quickMemo']);
-    const syncData = await chrome.storage.sync.get(['folders', 'noteMetadata']);
+    const localState = await chrome.storage.local.get([LAST_SYNC_USER_ID_KEY]);
+    const lastSyncedUserId =
+      typeof localState[LAST_SYNC_USER_ID_KEY] === 'string'
+        ? (localState[LAST_SYNC_USER_ID_KEY] as string)
+        : null;
 
-    // フォルダをアップロード
-    const folders = syncData.folders || {};
-    for (const folder of Object.values(folders) as Folder[]) {
-      await uploadFolder(folder);
+    const isDifferentUser = !!lastSyncedUserId && lastSyncedUserId !== authState.userId;
+
+    // アカウント切替時は、旧アカウントのローカルデータを新アカウントへ誤同期しないためにダウンロードのみ行う
+    if (!isDifferentUser) {
+      // ローカルデータを取得
+      const localData = await chrome.storage.local.get(['notes', 'quickMemo']);
+      const syncData = await chrome.storage.sync.get(['folders', 'noteMetadata']);
+
+      // フォルダをアップロード
+      const folders = syncData.folders || {};
+      for (const folder of Object.values(folders) as Folder[]) {
+        await uploadFolder(folder);
+      }
+
+      // メモをアップロード
+      const notes = localData.notes || {};
+      for (const note of Object.values(notes) as Note[]) {
+        await uploadMemo(note);
+      }
+
+      // 下書きメモをアップロード
+      const quickMemo = localData.quickMemo || { content: '', updatedAt: Date.now() };
+      await uploadQuickMemo(quickMemo);
+    } else {
+      console.warn('[Sync] Different user detected, running download-only sync to avoid data leakage');
+      await chrome.storage.sync.remove(['folderOrder', 'noteMetadata']);
     }
-
-    // メモをアップロード
-    const notes = localData.notes || {};
-    for (const note of Object.values(notes) as Note[]) {
-      await uploadMemo(note);
-    }
-
-    // 下書きメモをアップロード
-    const quickMemo = localData.quickMemo || { content: '', updatedAt: Date.now() };
-    await uploadQuickMemo(quickMemo);
 
     // ダウンロード（他のデバイスからの更新を取得）
     const foldersResult = await downloadFolders();
     const memosResult = await downloadMemos();
     const quickMemoResult = await downloadQuickMemo();
 
-    if (foldersResult.success && foldersResult.data) {
-      const foldersObj: { [key: string]: Folder } = {};
-      foldersResult.data.forEach(f => { foldersObj[f.id] = f; });
-      await chrome.storage.sync.set({ folders: foldersObj });
+    if (!foldersResult.success || !foldersResult.data) {
+      return { success: false, error: foldersResult.error || 'Failed to download folders' };
+    }
+    if (!memosResult.success || !memosResult.data) {
+      return { success: false, error: memosResult.error || 'Failed to download memos' };
+    }
+    if (!quickMemoResult.success || !quickMemoResult.data) {
+      return { success: false, error: quickMemoResult.error || 'Failed to download quick memo' };
     }
 
-    if (memosResult.success && memosResult.data) {
-      const notesObj: { [key: string]: Note } = {};
-      memosResult.data.forEach(n => { notesObj[n.id] = n; });
-      await chrome.storage.local.set({ notes: notesObj });
-    }
+    const foldersObj: Record<string, Folder> = {};
+    foldersResult.data.forEach(f => { foldersObj[f.id] = f; });
 
-    if (quickMemoResult.success && quickMemoResult.data) {
-      await chrome.storage.local.set({ quickMemo: quickMemoResult.data });
+    const notesObj: Record<string, Note> = {};
+    const noteMetadataObj: Record<string, NoteMetadata> = {};
+    memosResult.data.forEach(n => {
+      notesObj[n.id] = n;
+      noteMetadataObj[n.id] = {
+        id: n.id,
+        folderId: n.folderId,
+        title: n.title,
+        thumbnailPath: n.thumbnailPath,
+        createdAt: n.createdAt,
+        updatedAt: n.updatedAt,
+        lastOpenedAt: n.lastOpenedAt
+      };
+    });
+
+    await Promise.all([
+      chrome.storage.sync.set({ folders: foldersObj, noteMetadata: noteMetadataObj }),
+      chrome.storage.local.set({
+        notes: notesObj,
+        quickMemo: quickMemoResult.data,
+        [LAST_SYNC_USER_ID_KEY]: authState.userId
+      })
+    ]);
+
+    if (isDifferentUser) {
+      const stateAfter = await chrome.storage.sync.get(['folders', 'noteMetadata']);
+      if (stateAfter.folders && stateAfter.noteMetadata) {
+        console.log('[Sync] Download-only sync completed for new user');
+      }
     }
 
     lastSyncTime = Date.now();

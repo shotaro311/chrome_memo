@@ -603,7 +603,21 @@ function validateBackupFile(data: unknown): { success: true; backup: BackupFile 
   }
 
   const obj = data as Record<string, unknown>;
-  if (obj.schemaVersion !== BACKUP_SCHEMA_VERSION) {
+
+  const rawSchemaVersion = obj.schemaVersion;
+  let schemaVersion: number | null = null;
+
+  // 旧形式（schemaVersionなし）も受け付ける
+  if (rawSchemaVersion === undefined || rawSchemaVersion === null) {
+    schemaVersion = 0;
+  } else if (typeof rawSchemaVersion === 'number') {
+    schemaVersion = rawSchemaVersion;
+  } else if (typeof rawSchemaVersion === 'string') {
+    const parsed = Number(rawSchemaVersion);
+    schemaVersion = Number.isFinite(parsed) ? parsed : null;
+  }
+
+  if (schemaVersion === null || (schemaVersion !== BACKUP_SCHEMA_VERSION && schemaVersion !== 0)) {
     return { success: false, error: 'バックアップのバージョンが不正です' };
   }
 
@@ -630,7 +644,25 @@ function validateBackupFile(data: unknown): { success: true; backup: BackupFile 
     return { success: false, error: 'バックアップ形式が不正です（settings）' };
   }
 
-  return { success: true, backup: data as BackupFile };
+  const folderOrder = Array.isArray(obj.folderOrder) ? (obj.folderOrder as string[]) : undefined;
+  const thumbnailsByNoteId =
+    obj.thumbnailsByNoteId && typeof obj.thumbnailsByNoteId === 'object'
+      ? (obj.thumbnailsByNoteId as Record<string, BackupThumbnailV1>)
+      : undefined;
+
+  return {
+    success: true,
+    backup: {
+      schemaVersion: BACKUP_SCHEMA_VERSION,
+      exportedAt: obj.exportedAt as string,
+      folders: obj.folders as Folder[],
+      folderOrder,
+      notes: obj.notes as Note[],
+      quickMemo: obj.quickMemo as QuickMemo,
+      settings: obj.settings as any,
+      thumbnailsByNoteId
+    }
+  };
 }
 
 function buildUniqueTitle(params: { desiredTitle: string; used: Set<string> }) {
@@ -822,13 +854,6 @@ async function handleImportBackupData(
 
   const thumbnailsByNoteId = backup.thumbnailsByNoteId ?? {};
   const thumbnailKeys = Object.keys(thumbnailsByNoteId);
-
-  if (!backup.thumbnailsByNoteId) {
-    const legacyHasThumbnailPath = backup.notes.some(note => typeof (note as Note).thumbnailPath === 'string' && (note as Note).thumbnailPath?.length);
-    if (legacyHasThumbnailPath) {
-      return { success: false, error: 'このバックアップにはサムネイルが含まれていません（古い形式の可能性があります）' };
-    }
-  }
 
   let restoredThumbnails = 0;
 
