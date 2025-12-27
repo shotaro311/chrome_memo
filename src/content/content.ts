@@ -902,6 +902,16 @@ async function convertImageToWebpThumbnail(file: File) {
   return await blob.arrayBuffer();
 }
 
+function arrayBufferToBase64(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
 async function handleSetThumbnailFromFile(file: File, pane: Pane) {
   const noteId = getPaneTabId(pane);
   if (!noteId) return;
@@ -918,10 +928,11 @@ async function handleSetThumbnailFromFile(file: File, pane: Pane) {
 
   try {
     const data = await convertImageToWebpThumbnail(file);
+    const dataBase64 = arrayBufferToBase64(data);
     const response = await chrome.runtime.sendMessage({
       type: MessageType.SET_NOTE_THUMBNAIL,
       noteId,
-      data
+      data: dataBase64
     });
     if (!response.success) {
       alert(`サムネ設定に失敗しました: ${response.error}`);

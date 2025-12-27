@@ -321,7 +321,7 @@ export interface OpenNoteMessage extends BaseMessage {
 export interface SetNoteThumbnailMessage extends BaseMessage {
   type: MessageType.SET_NOTE_THUMBNAIL;
   noteId: string;
-  data: ArrayBuffer; // image/webp
+  data: ArrayBuffer | string; // image/webp (ArrayBuffer or base64)
 }
 
 /**

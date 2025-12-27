@@ -33,6 +33,36 @@ import {
   DEFAULT_THUMBNAIL_SIGNED_URL_EXPIRES_SEC
 } from '../lib/thumbnail';
 
+function base64ToArrayBuffer(base64: string) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
+function normalizeThumbnailData(data: unknown) {
+  if (typeof data === 'string') {
+    return { success: true as const, buffer: base64ToArrayBuffer(data) };
+  }
+  if (data instanceof ArrayBuffer) {
+    return { success: true as const, buffer: data };
+  }
+  if (typeof SharedArrayBuffer !== 'undefined' && data instanceof SharedArrayBuffer) {
+    const copy = new Uint8Array(data.byteLength);
+    copy.set(new Uint8Array(data));
+    return { success: true as const, buffer: copy.buffer };
+  }
+  if (ArrayBuffer.isView(data)) {
+    const view = data as ArrayBufferView;
+    const copy = new Uint8Array(view.byteLength);
+    copy.set(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
+    return { success: true as const, buffer: copy.buffer };
+  }
+  return { success: false as const, error: 'サムネのデータ形式が不正です' };
+}
+
 // ========================================
 // インストール時の初期化
 // ========================================
@@ -327,11 +357,16 @@ async function handleMessage(message: Message): Promise<Response> {
         const nextPath = buildThumbnailPath({ userId: authState.userId, noteId: note.id });
         const prevPath = note.thumbnailPath;
 
-	        const uploadResult = await uploadThumbnailWebp({ path: nextPath, data: message.data });
-	        if (!uploadResult.success) {
-	          return {
-	            success: false,
-	            error:
+        const normalized = normalizeThumbnailData(message.data);
+        if (!normalized.success) {
+          return { success: false, error: normalized.error };
+        }
+
+	        const uploadResult = await uploadThumbnailWebp({ path: nextPath, data: normalized.buffer });
+        if (!uploadResult.success) {
+          return {
+            success: false,
+            error:
 	              uploadResult.error === 'Not authenticated'
 	                ? 'サインインが必要です'
 	                : (uploadResult.error ?? 'サムネのアップロードに失敗しました')
