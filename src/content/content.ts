@@ -417,20 +417,30 @@ function setupEventListeners() {
     void openTabThumbnailMenu(tabId, e.clientX, e.clientY);
   });
 
-  const tabThumbnailDeleteBtn = panel.querySelector('#tab-thumbnail-delete-btn') as HTMLButtonElement | null;
-  tabThumbnailDeleteBtn?.addEventListener('click', () => {
-    void handleDeleteTabThumbnail();
-  });
+	  const tabThumbnailDeleteBtn = panel.querySelector('#tab-thumbnail-delete-btn') as HTMLButtonElement | null;
+	  tabThumbnailDeleteBtn?.addEventListener('click', () => {
+	    void handleDeleteTabThumbnail();
+	  });
 
-  const tabThumbnailImg = panel.querySelector('#tab-thumbnail-img') as HTMLImageElement | null;
-  const tabThumbnailPreview = panel.querySelector('.tab-thumbnail-preview') as HTMLElement | null;
-  tabThumbnailImg?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (!tabThumbnailPreview) return;
-    const isZoomed = tabThumbnailImg.classList.toggle('is-zoomed');
-    tabThumbnailPreview.classList.toggle('is-zoomed', isZoomed);
-  });
-}
+	  const tabThumbnailImg = panel.querySelector('#tab-thumbnail-img') as HTMLImageElement | null;
+	  tabThumbnailImg?.addEventListener('click', (e) => {
+	    e.stopPropagation();
+	    const src = tabThumbnailImg.src;
+	    if (!src) return;
+	    openThumbnailZoomOverlay(src);
+	  });
+
+	  const zoomOverlay = panel.querySelector('#thumbnail-zoom-overlay') as HTMLElement | null;
+	  const zoomImg = panel.querySelector('#thumbnail-zoom-img') as HTMLImageElement | null;
+	  zoomOverlay?.addEventListener('click', (e) => {
+	    e.stopPropagation();
+	    closeThumbnailZoomOverlay();
+	  });
+	  zoomImg?.addEventListener('click', (e) => {
+	    e.stopPropagation();
+	    closeThumbnailZoomOverlay();
+	  });
+	}
 
 function handleDocumentClick(e: MouseEvent) {
   if (!panel) return;
@@ -1028,14 +1038,37 @@ async function handleSetThumbnailFromFile(file: File, pane: Pane) {
     console.error('[Content] Failed to set thumbnail:', error);
     alert('サムネ画像の設定に失敗しました');
   }
-}
+	}
 
-function closeTabThumbnailMenu() {
-  if (!panel) return;
-  const menu = panel.querySelector('#tab-thumbnail-menu') as HTMLElement | null;
-  if (!menu) return;
-  menu.style.display = 'none';
-  menu.removeAttribute('data-note-id');
+	function openThumbnailZoomOverlay(src: string) {
+	  if (!panel) return;
+	  if (!src) return;
+	  const overlay = panel.querySelector('#thumbnail-zoom-overlay') as HTMLElement | null;
+	  const img = panel.querySelector('#thumbnail-zoom-img') as HTMLImageElement | null;
+	  if (!overlay || !img) return;
+	  img.src = src;
+	  overlay.style.display = 'flex';
+	}
+
+	function closeThumbnailZoomOverlay() {
+	  if (!panel) return;
+	  const overlay = panel.querySelector('#thumbnail-zoom-overlay') as HTMLElement | null;
+	  const img = panel.querySelector('#thumbnail-zoom-img') as HTMLImageElement | null;
+	  if (img) {
+	    img.src = '';
+	  }
+	  if (overlay) {
+	    overlay.style.display = 'none';
+	  }
+	}
+
+	function closeTabThumbnailMenu() {
+	  if (!panel) return;
+	  closeThumbnailZoomOverlay();
+	  const menu = panel.querySelector('#tab-thumbnail-menu') as HTMLElement | null;
+	  if (!menu) return;
+	  menu.style.display = 'none';
+	  menu.removeAttribute('data-note-id');
 
   const loading = menu.querySelector('#tab-thumbnail-loading') as HTMLElement | null;
   const img = menu.querySelector('#tab-thumbnail-img') as HTMLImageElement | null;

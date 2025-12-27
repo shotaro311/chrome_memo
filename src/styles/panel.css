@@ -463,6 +463,27 @@
   margin-top: 8px !important;
 }
 
+/* サムネ拡大表示（パネル枠内） */
+.chrome-memo-panel .thumbnail-zoom-overlay {
+  position: absolute !important;
+  inset: 0 !important;
+  background: rgba(0, 0, 0, 0.75) !important;
+  z-index: 140 !important;
+  padding: 12px !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.chrome-memo-panel .thumbnail-zoom-img {
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important;
+  border: 1px solid #404040 !important;
+  border-radius: 8px !important;
+  background: #1f1f1f !important;
+  cursor: zoom-out;
+}
+
 /* メモ一覧 */
 .chrome-memo-panel .note-list {
   flex: 1 !important;

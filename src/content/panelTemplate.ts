@@ -208,21 +208,26 @@ export function getPanelHtml(): string {
       <button class="folder-context-item" id="folder-context-delete">削除</button>
     </div>
 
-    <!-- タブサムネメニュー -->
-    <div class="tab-thumbnail-menu" id="tab-thumbnail-menu" style="display: none;">
-      <div class="tab-thumbnail-preview">
-        <div class="tab-thumbnail-loading" id="tab-thumbnail-loading">読み込み中...</div>
-        <img class="tab-thumbnail-img" id="tab-thumbnail-img" alt="thumbnail" />
-      </div>
-      <div class="tab-thumbnail-actions">
-        <button class="btn-secondary" id="tab-thumbnail-delete-btn">削除</button>
-      </div>
-    </div>
+	    <!-- タブサムネメニュー -->
+	    <div class="tab-thumbnail-menu" id="tab-thumbnail-menu" style="display: none;">
+	      <div class="tab-thumbnail-preview">
+	        <div class="tab-thumbnail-loading" id="tab-thumbnail-loading">読み込み中...</div>
+	        <img class="tab-thumbnail-img" id="tab-thumbnail-img" alt="thumbnail" />
+	      </div>
+	      <div class="tab-thumbnail-actions">
+	        <button class="btn-secondary" id="tab-thumbnail-delete-btn">削除</button>
+	      </div>
+	    </div>
 
-    <!-- スプリット選択モーダル -->
-    <div class="split-modal" id="split-modal" style="display: none;">
-      <div class="split-modal-content">
-        <div class="split-modal-header">
+	    <!-- サムネ拡大表示（パネル枠内） -->
+	    <div class="thumbnail-zoom-overlay" id="thumbnail-zoom-overlay" style="display: none;">
+	      <img class="thumbnail-zoom-img" id="thumbnail-zoom-img" alt="thumbnail zoom" />
+	    </div>
+
+	    <!-- スプリット選択モーダル -->
+	    <div class="split-modal" id="split-modal" style="display: none;">
+	      <div class="split-modal-content">
+	        <div class="split-modal-header">
           <h3>右側に表示するメモを選択</h3>
           <button class="close-modal-btn" id="close-split-modal-btn">×</button>
         </div>
