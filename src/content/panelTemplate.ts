@@ -15,22 +15,25 @@ export function getPanelHtml(): string {
             <label>文字サイズ</label>
             <div class="font-size-options" id="font-size-options"></div>
           </div>
-        </div>
-        <button class="header-btn" id="ai-btn" title="AI">🤖</button>
-        <button class="header-btn" id="auth-btn" title="同期 / サインイン">👤</button>
-        <button class="header-btn" id="export-data-btn" title="メモをエクスポート">📤</button>
-        <span class="memo-current-label" id="memo-current-label"></span>
-      </div>
-      <div class="header-right">
-        <button class="header-btn" id="toggle-panel-size-btn" title="パネルサイズ切り替え">⤢</button>
-        <button class="close-btn" id="close-panel-btn">×</button>
-      </div>
-    </div>
+	        </div>
+	        <button class="header-btn" id="ai-btn" title="AI">🤖</button>
+	        <button class="header-btn" id="auth-btn" title="同期 / サインイン">👤</button>
+	        <button class="header-btn" id="export-data-btn" title="メモをエクスポート">📤</button>
+	        <button class="header-btn" id="import-data-btn" title="メモをインポート">📦</button>
+	        <span class="memo-current-label" id="memo-current-label"></span>
+	      </div>
+	      <div class="header-right">
+	        <button class="header-btn" id="toggle-panel-size-btn" title="パネルサイズ切り替え">⤢</button>
+	        <button class="close-btn" id="close-panel-btn">×</button>
+	      </div>
+	    </div>
 
-    <div class="panel-content">
-      <!-- タブバー -->
-      <div class="tab-bar">
-        <div class="tab-list" id="tab-list"></div>
+	    <input type="file" id="import-data-input" accept="application/json" style="display: none;" />
+
+	    <div class="panel-content">
+	      <!-- タブバー -->
+	      <div class="tab-bar">
+	        <div class="tab-list" id="tab-list"></div>
       </div>
 
       <!-- メモテキストエリア -->

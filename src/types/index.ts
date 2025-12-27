@@ -48,6 +48,30 @@ export interface QuickMemo {
 }
 
 // ========================================
+// バックアップ（エクスポート/インポート）
+// ========================================
+
+export const BACKUP_SCHEMA_VERSION = 1 as const;
+
+export interface BackupThumbnailV1 {
+  mimeType: 'image/webp';
+  base64: string;
+}
+
+export interface BackupFileV1 {
+  schemaVersion: typeof BACKUP_SCHEMA_VERSION;
+  exportedAt: string;
+  folders: Folder[];
+  folderOrder?: string[];
+  notes: Note[];
+  quickMemo: QuickMemo;
+  settings: AppSettings;
+  thumbnailsByNoteId?: Record<string, BackupThumbnailV1>;
+}
+
+export type BackupFile = BackupFileV1;
+
+// ========================================
 // ストレージデータ構造
 // ========================================
 
@@ -155,6 +179,7 @@ export enum MessageType {
 
   // エクスポート
   GET_EXPORT_DATA = 'GET_EXPORT_DATA',
+  IMPORT_BACKUP_DATA = 'IMPORT_BACKUP_DATA',
 
   // 検索
   SEARCH_NOTES = 'SEARCH_NOTES',
@@ -395,6 +420,14 @@ export interface GetExportDataMessage extends BaseMessage {
 }
 
 /**
+ * バックアップデータのインポート
+ */
+export interface ImportBackupDataMessage extends BaseMessage {
+  type: MessageType.IMPORT_BACKUP_DATA;
+  data: BackupFile;
+}
+
+/**
  * 検索メッセージ
  */
 export interface SearchNotesMessage extends BaseMessage {
@@ -443,6 +476,7 @@ export type Message =
   | GetQuickMemoMessage
   | GetRecentNotesMessage
   | GetExportDataMessage
+  | ImportBackupDataMessage
   | SearchNotesMessage
   | ErrorMessage;
 

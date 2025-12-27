@@ -336,14 +336,17 @@ function setupEventListeners() {
       case 'clear-gemini-custom-prompt-btn':
         void handleClearGeminiCustomPrompt();
         break;
-      case 'export-data-btn':
-        void handleExportData();
-        break;
-      case 'font-size-btn':
-        toggleFontSizeMenu();
-        break;
-      case 'toggle-panel-size-btn':
-        handleTogglePanelSize();
+	      case 'export-data-btn':
+	        void handleExportData();
+	        break;
+	      case 'import-data-btn':
+	        void handleImportData();
+	        break;
+	      case 'font-size-btn':
+	        toggleFontSizeMenu();
+	        break;
+	      case 'toggle-panel-size-btn':
+	        handleTogglePanelSize();
         break;
     }
   });
@@ -861,10 +864,10 @@ function handleTogglePanelSize() {
   }
 }
 
-async function handleExportData() {
-  try {
-    const response = await chrome.runtime.sendMessage({
-      type: MessageType.GET_EXPORT_DATA
+	async function handleExportData() {
+	  try {
+	    const response = await chrome.runtime.sendMessage({
+	      type: MessageType.GET_EXPORT_DATA
     });
     if (!response.success) {
       alert(`エクスポートに失敗しました: ${response.error}`);
@@ -883,14 +886,68 @@ async function handleExportData() {
     link.remove();
     URL.revokeObjectURL(url);
   } catch (error) {
-    console.error('[Content] Error exporting data:', error);
-    alert('エクスポートに失敗しました');
-  }
-}
+	    console.error('[Content] Error exporting data:', error);
+	    alert('エクスポートに失敗しました');
+	  }
+	}
 
-function getPaneTabId(pane: Pane) {
-  return pane === 'left' ? panelState.activeTabId : panelState.rightTabId;
-}
+	async function handleImportData() {
+	  if (!panel) return;
+	  const input = panel.querySelector('#import-data-input') as HTMLInputElement | null;
+	  if (!input) return;
+
+	  input.value = '';
+	  input.onchange = async () => {
+	    const file = input.files?.[0];
+	    if (!file) return;
+
+	    const ok = confirm('バックアップをインポートします。\nフォルダ/メモは追加で取り込みます。\n下書きメモと設定はバックアップの内容で上書きされます。\nよろしいですか？');
+	    if (!ok) {
+	      input.value = '';
+	      return;
+	    }
+
+	    try {
+	      const text = await file.text();
+	      const data = JSON.parse(text);
+
+	      const response = await chrome.runtime.sendMessage({
+	        type: MessageType.IMPORT_BACKUP_DATA,
+	        data
+	      });
+
+	      if (!response?.success) {
+	        alert(response?.error || 'インポートに失敗しました');
+	        return;
+	      }
+
+	      await loadSettings();
+	      applyMemoFontSize(appSettings.memoFontSize);
+	      await actions.loadData();
+	      view.renderAll();
+
+	      const summary = response.data as {
+	        addedFolders: number;
+	        addedNotes: number;
+	        restoredThumbnails: number;
+	        sync?: { success: boolean; error?: string };
+	      };
+	      const syncText = summary.sync?.success ? '同期: OK' : `同期: 失敗（${summary.sync?.error || '不明'}）`;
+	      alert(`インポートしました（追加フォルダ: ${summary.addedFolders} / 追加メモ: ${summary.addedNotes} / サムネ復元: ${summary.restoredThumbnails} / ${syncText}）`);
+	    } catch (error) {
+	      console.error('[Content] Error importing data:', error);
+	      alert('インポートに失敗しました');
+	    } finally {
+	      input.value = '';
+	    }
+	  };
+
+	  input.click();
+	}
+
+	function getPaneTabId(pane: Pane) {
+	  return pane === 'left' ? panelState.activeTabId : panelState.rightTabId;
+	}
 
 async function convertImageToWebpThumbnail(file: File) {
   const bitmap = await createImageBitmap(file);

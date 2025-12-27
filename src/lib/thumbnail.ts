@@ -57,3 +57,25 @@ export async function createThumbnailSignedUrl(params: { path: string; expiresIn
   }
   return { success: true, url: data.signedUrl };
 }
+
+export async function downloadThumbnailWebp(
+  params: { path: string }
+): Promise<{ success: true; buffer: ArrayBuffer } | { success: false; error: string }> {
+  const authState = await getAuthState();
+  if (!authState.isAuthenticated || !authState.userId) {
+    return { success: false, error: 'Not authenticated' };
+  }
+
+  const { data, error } = await supabase.storage.from(THUMBNAIL_BUCKET_ID).download(params.path);
+  if (error || !data) {
+    console.error('[Thumbnail] Download error:', error);
+    return { success: false, error: error?.message || 'Failed to download thumbnail' };
+  }
+
+  try {
+    const buffer = await data.arrayBuffer();
+    return { success: true, buffer };
+  } catch (e) {
+    return { success: false, error: `Failed to read thumbnail: ${String(e)}` };
+  }
+}
