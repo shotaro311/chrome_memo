@@ -418,6 +418,15 @@ function setupEventListeners() {
   tabThumbnailDeleteBtn?.addEventListener('click', () => {
     void handleDeleteTabThumbnail();
   });
+
+  const tabThumbnailImg = panel.querySelector('#tab-thumbnail-img') as HTMLImageElement | null;
+  const tabThumbnailPreview = panel.querySelector('.tab-thumbnail-preview') as HTMLElement | null;
+  tabThumbnailImg?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!tabThumbnailPreview) return;
+    const isZoomed = tabThumbnailImg.classList.toggle('is-zoomed');
+    tabThumbnailPreview.classList.toggle('is-zoomed', isZoomed);
+  });
 }
 
 function handleDocumentClick(e: MouseEvent) {
@@ -489,9 +498,13 @@ function updateAiModalContext() {
   if (!info) return;
 
   const hasSelection = info.start !== info.end;
-  const selectionCount = Math.max(0, info.end - info.start);
+  const fullLength = info.textarea.value.length;
+  let selectionState = 'カーソル挿入';
+  if (hasSelection) {
+    selectionState = info.start === 0 && info.end === fullLength && fullLength > 0 ? '全文選択' : '一部選択';
+  }
   if (statusEl) {
-    statusEl.textContent = hasSelection ? `あり（${selectionCount}文字）` : 'なし';
+    statusEl.textContent = selectionState;
   }
   if (paneEl) {
     paneEl.textContent = info.pane === 'right' ? '右' : '左';
@@ -535,6 +548,10 @@ function openAiModal() {
   const settings = panel.querySelector('#ai-settings') as HTMLElement | null;
   if (settings) {
     settings.style.display = 'none';
+  }
+  const loading = panel.querySelector('#ai-loading') as HTMLElement | null;
+  if (loading) {
+    loading.style.display = 'none';
   }
   updateAiModalContext();
   const modal = panel.querySelector('#ai-modal') as HTMLElement | null;
@@ -681,6 +698,7 @@ async function handleAiRun() {
   if (!panel) return;
   const promptEl = panel.querySelector('#ai-prompt-input') as HTMLTextAreaElement | null;
   if (!promptEl) return;
+  const loading = panel.querySelector('#ai-loading') as HTMLElement | null;
 
   const instruction = promptEl.value.trim();
   if (!instruction) {
@@ -711,6 +729,9 @@ async function handleAiRun() {
 
   const wasDisabled = promptEl.disabled;
   promptEl.disabled = true;
+  if (loading) {
+    loading.style.display = 'flex';
+  }
 
   try {
     const response = await chrome.runtime.sendMessage({
@@ -725,10 +746,14 @@ async function handleAiRun() {
 
     const generated = typeof response.data === 'string' ? response.data : String(response.data ?? '');
     applyAiText({ pane, textarea, start, end, mode, insertText: generated });
+    closeAiModal();
   } catch (error) {
     alert(`AIの実行に失敗しました: ${String(error)}`);
   } finally {
     promptEl.disabled = wasDisabled;
+    if (loading) {
+      loading.style.display = 'none';
+    }
   }
 }
 
@@ -957,6 +982,7 @@ function closeTabThumbnailMenu() {
 
   const loading = menu.querySelector('#tab-thumbnail-loading') as HTMLElement | null;
   const img = menu.querySelector('#tab-thumbnail-img') as HTMLImageElement | null;
+  const preview = menu.querySelector('.tab-thumbnail-preview') as HTMLElement | null;
   if (loading) {
     loading.textContent = '';
     loading.style.display = 'none';
@@ -964,6 +990,10 @@ function closeTabThumbnailMenu() {
   if (img) {
     img.src = '';
     img.style.display = 'none';
+    img.classList.remove('is-zoomed');
+  }
+  if (preview) {
+    preview.classList.remove('is-zoomed');
   }
 }
 
@@ -993,6 +1023,7 @@ async function openTabThumbnailMenu(noteId: string, clientX: number, clientY: nu
   const deleteBtn = menu.querySelector('#tab-thumbnail-delete-btn') as HTMLButtonElement | null;
   const loading = menu.querySelector('#tab-thumbnail-loading') as HTMLElement | null;
   const img = menu.querySelector('#tab-thumbnail-img') as HTMLImageElement | null;
+  const preview = menu.querySelector('.tab-thumbnail-preview') as HTMLElement | null;
 
   if (deleteBtn) {
     deleteBtn.disabled = true;
@@ -1001,6 +1032,10 @@ async function openTabThumbnailMenu(noteId: string, clientX: number, clientY: nu
   if (img) {
     img.src = '';
     img.style.display = 'none';
+    img.classList.remove('is-zoomed');
+  }
+  if (preview) {
+    preview.classList.remove('is-zoomed');
   }
   if (loading) {
     loading.textContent = '読み込み中...';

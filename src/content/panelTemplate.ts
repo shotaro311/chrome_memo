@@ -188,6 +188,13 @@ export function getPanelHtml(): string {
             ></textarea>
             <div class="ai-hint">Enterで実行 / Shift+Enterで改行</div>
           </div>
+          <div class="ai-loading" id="ai-loading" style="display: none;">
+            <div class="ai-spinner"></div>
+            <span>反映中...</span>
+          </div>
+          <div class="ai-status-row">
+            <span id="ai-selection-status">カーソル挿入</span>
+          </div>
         </div>
       </div>
     </div>
