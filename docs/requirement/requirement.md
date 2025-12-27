@@ -234,6 +234,27 @@
   - 既定は「選択あり=選択置換」「選択なし=カーソル挿入」
 - 本文への反映は「プレビューなしで直接反映」を基本とする（AI反映直後は Cmd/Ctrl+Z で元に戻せる）
 
+## 5.11 サムネイル（画像）
+
+- 目的: 画像プロンプト系のメモにサムネイルを付け、内容のイメージを素早く確認できるようにする
+- 対象: 通常メモのみ（下書きメモは不可）
+- 設定:
+  - メモ入力欄に画像を貼り付け、またはドラッグ&ドロップでサムネ設定できる
+  - 既にサムネがある場合は「上書き確認」ダイアログを出し、OK時のみ上書きする
+- 変換:
+  - 元画像の縦横比を維持したまま、幅/高さを **1/2** に縮小する
+  - WebP に変換して軽量化する（quality=**0.7** 固定）
+- 保存:
+  - Supabase Storage の private bucket `memo-thumbnails` に保存する
+  - `memos.thumbnail_path` に保存パス（例: `<userId>/<noteId>.webp`）を保持する
+- 表示/削除:
+  - タブを右クリックするとサムネを表示する
+  - 同時に削除ボタンを表示し、削除すると Storage 上からも削除され、`thumbnail_path` は未設定になる
+  - 表示には署名URL（signed URL）を使用する
+- 非対象:
+  - 本文中への画像埋め込み/表示
+  - 画像編集（トリミング・回転など）
+
 ## 6. データ保存・同期
 
 ## 6.1 保存方針（ローカル + Supabase）
@@ -254,7 +275,7 @@
 ## 6.3 同期するデータ（Supabase）
 
 - フォルダ：`id, name, isSystem, createdAt, updatedAt`
-- 通常メモ：`id, folderId, title, content, createdAt, updatedAt`
+- 通常メモ：`id, folderId, title, content, thumbnailPath, createdAt, updatedAt`
 - 下書きメモ：`content, updatedAt`
 - `lastOpenedAt` は同期対象外（Supabaseには保存しない）
 

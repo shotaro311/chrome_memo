@@ -55,6 +55,7 @@ CREATE TABLE memos (
   folder_id TEXT NOT NULL,
   title TEXT NOT NULL,
   content TEXT NOT NULL DEFAULT '',
+  thumbnail_path TEXT,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL,
   FOREIGN KEY (user_id, folder_id) REFERENCES folders(user_id, id) ON DELETE CASCADE

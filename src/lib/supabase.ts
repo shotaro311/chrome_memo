@@ -30,6 +30,7 @@ export interface SupabaseMemo {
   folder_id: string;
   title: string;
   content: string;
+  thumbnail_path?: string | null;
   created_at: number;
   updated_at: number;
 }

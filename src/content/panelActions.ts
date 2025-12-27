@@ -278,18 +278,25 @@ export function createPanelActions(state: PanelActionsState, deps: PanelActionsD
     menu.style.top = `${top}px`;
   }
 
-  async function handleFolderContextRename() {
-    const folderId = folderContextMenuFolderId;
-    closeFolderContextMenu();
-    if (!folderId) return;
-    const folder = getFolderById(folderId);
-    if (!folder || folder.isSystem) return;
+	  async function handleFolderContextRename() {
+	    const folderId = folderContextMenuFolderId;
+	    closeFolderContextMenu();
+	    if (!folderId) return;
+	    const folder = getFolderById(folderId);
+	    if (!folder || folder.isSystem) return;
 
-    const nextName = prompt('新しいフォルダ名を入力してください', folder.name);
-    if (nextName === null) return;
-    const trimmedName = nextName.trim();
-    if (!trimmedName) {
-      alert('フォルダ名を入力してください');
+	    const panel = getPanel();
+	    panel?.setAttribute('data-suspend-file-modal-hover-close', 'true');
+	    let nextName: string | null = null;
+	    try {
+	      nextName = prompt('新しいフォルダ名を入力してください', folder.name);
+	    } finally {
+	      panel?.removeAttribute('data-suspend-file-modal-hover-close');
+	    }
+	    if (nextName === null) return;
+	    const trimmedName = nextName.trim();
+	    if (!trimmedName) {
+	      alert('フォルダ名を入力してください');
       return;
     }
 
@@ -312,18 +319,25 @@ export function createPanelActions(state: PanelActionsState, deps: PanelActionsD
     }
   }
 
-  async function handleFolderContextDelete() {
-    const folderId = folderContextMenuFolderId;
-    closeFolderContextMenu();
-    if (!folderId) return;
-    const folder = getFolderById(folderId);
-    if (!folder || folder.isSystem) return;
+	  async function handleFolderContextDelete() {
+	    const folderId = folderContextMenuFolderId;
+	    closeFolderContextMenu();
+	    if (!folderId) return;
+	    const folder = getFolderById(folderId);
+	    if (!folder || folder.isSystem) return;
 
-    const ok = confirm('フォルダを削除しますか？配下のメモも削除されます。');
-    if (!ok) return;
+	    const panel = getPanel();
+	    panel?.setAttribute('data-suspend-file-modal-hover-close', 'true');
+	    let ok = false;
+	    try {
+	      ok = confirm('フォルダを削除しますか？配下のメモも削除されます。');
+	    } finally {
+	      panel?.removeAttribute('data-suspend-file-modal-hover-close');
+	    }
+	    if (!ok) return;
 
-    try {
-      const response = await chrome.runtime.sendMessage({
+	    try {
+	      const response = await chrome.runtime.sendMessage({
         type: MessageType.DELETE_FOLDER,
         folderId
       });

@@ -193,7 +193,8 @@ export function createPanelView(state: PanelViewState, deps: PanelViewDeps) {
     tabInfoMap[note.id] = {
       id: note.id,
       kind: 'note',
-      title: note.title
+      title: note.title,
+      thumbnailPath: note.thumbnailPath
     };
 
     tabContentCache[note.id] = contentOverride ?? note.content;
@@ -304,4 +305,3 @@ export function createPanelView(state: PanelViewState, deps: PanelViewDeps) {
     updateHeaderState
   };
 }
-

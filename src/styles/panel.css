@@ -407,6 +407,50 @@
   background: #3a3a3a !important;
 }
 
+/* タブ右クリック：サムネ表示メニュー */
+.chrome-memo-panel .tab-thumbnail-menu {
+  position: absolute !important;
+  background: #2d2d2d !important;
+  border: 1px solid #404040 !important;
+  border-radius: 8px !important;
+  padding: 10px !important;
+  width: 240px !important;
+  z-index: 130 !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35) !important;
+}
+
+.chrome-memo-panel .tab-thumbnail-preview {
+  width: 100% !important;
+  height: 140px !important;
+  background: #1f1f1f !important;
+  border: 1px solid #404040 !important;
+  border-radius: 6px !important;
+  overflow: hidden !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.chrome-memo-panel .tab-thumbnail-loading {
+  color: #cfcfcf !important;
+  font-size: 13px !important;
+  text-align: center !important;
+  padding: 8px !important;
+}
+
+.chrome-memo-panel .tab-thumbnail-img {
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important;
+  display: none !important;
+}
+
+.chrome-memo-panel .tab-thumbnail-actions {
+  display: flex !important;
+  justify-content: flex-end !important;
+  margin-top: 8px !important;
+}
+
 /* メモ一覧 */
 .chrome-memo-panel .note-list {
   flex: 1 !important;

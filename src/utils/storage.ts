@@ -368,6 +368,7 @@ export async function createNote(
     id: newNote.id,
     folderId: newNote.folderId,
     title: newNote.title,
+    thumbnailPath: newNote.thumbnailPath,
     createdAt: newNote.createdAt,
     updatedAt: newNote.updatedAt,
     lastOpenedAt: newNote.lastOpenedAt
@@ -384,7 +385,7 @@ export async function createNote(
  */
 export async function updateNote(
   noteId: string,
-  updates: { title?: string; content?: string; folderId?: string }
+  updates: { title?: string; content?: string; folderId?: string; thumbnailPath?: string | null }
 ): Promise<Note> {
   const note = await getNote(noteId);
   if (!note) {
@@ -435,6 +436,15 @@ export async function updateNote(
     note.content = updates.content;
   }
 
+  // サムネ更新
+  if (updates.thumbnailPath !== undefined) {
+    if (updates.thumbnailPath) {
+      note.thumbnailPath = updates.thumbnailPath;
+    } else {
+      delete note.thumbnailPath;
+    }
+  }
+
   note.updatedAt = Date.now();
 
   // Localストレージを更新
@@ -447,6 +457,7 @@ export async function updateNote(
     id: note.id,
     folderId: note.folderId,
     title: note.title,
+    thumbnailPath: note.thumbnailPath,
     createdAt: note.createdAt,
     updatedAt: note.updatedAt,
     lastOpenedAt: note.lastOpenedAt

@@ -22,9 +22,16 @@ import {
   updateSettings
 } from '../utils/storage';
 import { getAuthState, onAuthStateChange, signInWithGoogle, signOut } from '../lib/auth';
-import { deleteFolder as deleteFolderSync, deleteMemo, fullSync } from '../lib/sync';
+import { deleteFolder as deleteFolderSync, deleteMemo, fullSync, uploadMemo } from '../lib/sync';
 import { chromeStorage } from '../lib/chromeStorage';
 import { generateGeminiText } from '../lib/gemini';
+import {
+  buildThumbnailPath,
+  createThumbnailSignedUrl,
+  deleteThumbnail,
+  uploadThumbnailWebp,
+  DEFAULT_THUMBNAIL_SIGNED_URL_EXPIRES_SEC
+} from '../lib/thumbnail';
 
 // ========================================
 // インストール時の初期化
@@ -229,10 +236,21 @@ async function handleMessage(message: Message): Promise<Response> {
       }
 
       case MessageType.DELETE_FOLDER: {
+        const notesInFolder = await getNotesInFolder(message.folderId);
+        const thumbnailPaths = notesInFolder
+          .map(note => note.thumbnailPath)
+          .filter((path): path is string => Boolean(path));
+
         await deleteFolder(message.folderId);
         const syncResult = await deleteFolderSync(message.folderId);
         if (!syncResult.success && syncResult.error !== 'Not authenticated') {
           console.error('[Background] Delete folder sync error:', syncResult.error);
+        }
+        for (const path of thumbnailPaths) {
+          const deleteResult = await deleteThumbnail({ path });
+          if (!deleteResult.success && deleteResult.error !== 'Not authenticated') {
+            console.error('[Background] Delete thumbnail error:', deleteResult.error);
+          }
         }
         return { success: true, data: null };
       }
@@ -267,12 +285,20 @@ async function handleMessage(message: Message): Promise<Response> {
         const note = await updateNote(message.noteId, {
           title: message.title,
           content: message.content,
-          folderId: message.folderId
+          folderId: message.folderId,
+          thumbnailPath: message.thumbnailPath
         });
         return { success: true, data: note };
       }
 
       case MessageType.DELETE_NOTE: {
+        const note = await getNote(message.noteId);
+        if (note?.thumbnailPath) {
+          const deleteResult = await deleteThumbnail({ path: note.thumbnailPath });
+          if (!deleteResult.success && deleteResult.error !== 'Not authenticated') {
+            console.error('[Background] Delete thumbnail error:', deleteResult.error);
+          }
+        }
         await deleteNote(message.noteId);
         const syncResult = await deleteMemo(message.noteId);
         if (!syncResult.success && syncResult.error !== 'Not authenticated') {
@@ -285,6 +311,124 @@ async function handleMessage(message: Message): Promise<Response> {
         await markNoteAsOpened(message.noteId);
         const note = await getNote(message.noteId);
         return { success: true, data: note };
+      }
+
+      case MessageType.SET_NOTE_THUMBNAIL: {
+        const authState = await getAuthState();
+        if (!authState.isAuthenticated || !authState.userId) {
+          return { success: false, error: 'サインインが必要です' };
+        }
+
+        const note = await getNote(message.noteId);
+        if (!note) {
+          return { success: false, error: 'メモが見つかりません' };
+        }
+
+        const nextPath = buildThumbnailPath({ userId: authState.userId, noteId: note.id });
+        const prevPath = note.thumbnailPath;
+
+	        const uploadResult = await uploadThumbnailWebp({ path: nextPath, data: message.data });
+	        if (!uploadResult.success) {
+	          return {
+	            success: false,
+	            error:
+	              uploadResult.error === 'Not authenticated'
+	                ? 'サインインが必要です'
+	                : (uploadResult.error ?? 'サムネのアップロードに失敗しました')
+	          };
+	        }
+
+	        const memoUploadResult = await uploadMemo({
+	          ...note,
+	          thumbnailPath: nextPath,
+	          updatedAt: Date.now()
+	        });
+	        if (!memoUploadResult.success) {
+	          await deleteThumbnail({ path: nextPath });
+	          return {
+	            success: false,
+	            error:
+	              memoUploadResult.error === 'Not authenticated'
+	                ? 'サインインが必要です'
+	                : (memoUploadResult.error ?? '同期に失敗しました')
+	          };
+	        }
+
+        const updatedNote = await updateNote(note.id, { thumbnailPath: nextPath });
+        if (prevPath && prevPath !== nextPath) {
+          const deleteResult = await deleteThumbnail({ path: prevPath });
+          if (!deleteResult.success && deleteResult.error !== 'Not authenticated') {
+            console.error('[Background] Delete thumbnail error:', deleteResult.error);
+          }
+        }
+        return { success: true, data: updatedNote };
+      }
+
+      case MessageType.DELETE_NOTE_THUMBNAIL: {
+        const authState = await getAuthState();
+        if (!authState.isAuthenticated || !authState.userId) {
+          return { success: false, error: 'サインインが必要です' };
+        }
+
+        const note = await getNote(message.noteId);
+        if (!note) {
+          return { success: false, error: 'メモが見つかりません' };
+        }
+        if (!note.thumbnailPath) {
+          return { success: true, data: note };
+        }
+
+	        const memoUploadResult = await uploadMemo({
+	          ...note,
+	          thumbnailPath: undefined,
+	          updatedAt: Date.now()
+	        });
+	        if (!memoUploadResult.success) {
+	          return {
+	            success: false,
+	            error:
+	              memoUploadResult.error === 'Not authenticated'
+	                ? 'サインインが必要です'
+	                : (memoUploadResult.error ?? '同期に失敗しました')
+	          };
+	        }
+
+        const updatedNote = await updateNote(note.id, { thumbnailPath: null });
+        const deleteResult = await deleteThumbnail({ path: note.thumbnailPath });
+        if (!deleteResult.success && deleteResult.error !== 'Not authenticated') {
+          console.error('[Background] Delete thumbnail error:', deleteResult.error);
+        }
+        return { success: true, data: updatedNote };
+      }
+
+      case MessageType.GET_NOTE_THUMBNAIL_URL: {
+        const authState = await getAuthState();
+        if (!authState.isAuthenticated || !authState.userId) {
+          return { success: false, error: 'サインインが必要です' };
+        }
+
+        const note = await getNote(message.noteId);
+        if (!note) {
+          return { success: false, error: 'メモが見つかりません' };
+        }
+        if (!note.thumbnailPath) {
+          return { success: false, error: 'サムネが設定されていません' };
+        }
+
+	        const signed = await createThumbnailSignedUrl({
+	          path: note.thumbnailPath,
+	          expiresIn: message.expiresIn ?? DEFAULT_THUMBNAIL_SIGNED_URL_EXPIRES_SEC
+	        });
+	        if (!signed.success) {
+	          return {
+	            success: false,
+	            error:
+	              signed.error === 'Not authenticated'
+	                ? 'サインインが必要です'
+	                : (signed.error ?? '署名URLの取得に失敗しました')
+	          };
+	        }
+        return { success: true, data: signed.url };
       }
 
       case MessageType.GET_RECENT_NOTES: {

@@ -60,6 +60,7 @@ export async function uploadMemo(note: Note): Promise<{ success: boolean; error?
       folder_id: note.folderId,
       title: note.title,
       content: note.content,
+      thumbnail_path: note.thumbnailPath ?? null,
       created_at: note.createdAt,
       updated_at: note.updatedAt
     };
@@ -171,6 +172,7 @@ export async function downloadMemos(): Promise<{ success: boolean; data?: Note[]
       folderId: m.folder_id,
       title: m.title,
       content: m.content,
+      thumbnailPath: m.thumbnail_path ?? undefined,
       createdAt: m.created_at,
       updatedAt: m.updated_at,
       lastOpenedAt: 0

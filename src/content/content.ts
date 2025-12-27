@@ -1,9 +1,9 @@
-import type { AppSettings, Folder, PanelState, QuickMemo } from '../types';
+import type { AppSettings, Folder, Note, PanelState, QuickMemo } from '../types';
 import { INBOX_FOLDER_ID, LIMITS, MessageType } from '../types';
 import { escapeHtml, focusMemoTextarea, getTextarea } from './panelDom';
 import { createPanelActions } from './panelActions';
 import { getPanelHtml } from './panelTemplate';
-import type { Pane, TabInfo } from './panelTypes';
+import { DRAFT_TAB_ID, type Pane, type TabInfo } from './panelTypes';
 import { createPanelView } from './panelView';
 
 let panel: HTMLElement | null = null;
@@ -377,12 +377,15 @@ function setupEventListeners() {
 
   const fileModal = panel.querySelector('#file-modal') as HTMLElement | null;
   if (fileModal && !fileModal.hasAttribute('data-hover-close')) {
-    fileModal.setAttribute('data-hover-close', 'true');
-    fileModal.addEventListener('pointerleave', (e) => {
-      const related = (e as PointerEvent).relatedTarget as Node | null;
-      const contextMenu = panel?.querySelector('#folder-context-menu') as HTMLElement | null;
-      if (related && (fileModal.contains(related) || contextMenu?.contains(related))) {
-        return;
+	    fileModal.setAttribute('data-hover-close', 'true');
+	    fileModal.addEventListener('pointerleave', (e) => {
+	      if (panel?.hasAttribute('data-suspend-file-modal-hover-close')) {
+	        return;
+	      }
+	      const related = (e as PointerEvent).relatedTarget as Node | null;
+	      const contextMenu = panel?.querySelector('#folder-context-menu') as HTMLElement | null;
+	      if (related && (fileModal.contains(related) || contextMenu?.contains(related))) {
+	        return;
       }
       actions.closeFileModal();
     });
@@ -400,6 +403,21 @@ function setupEventListeners() {
     },
     { passive: false }
   );
+
+  tabList?.addEventListener('contextmenu', (e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    const tabEl = target.closest('.tab-item') as HTMLElement | null;
+    if (!tabEl) return;
+    const tabId = tabEl.getAttribute('data-tab-id');
+    if (!tabId || tabId === DRAFT_TAB_ID) return;
+    e.preventDefault();
+    void openTabThumbnailMenu(tabId, e.clientX, e.clientY);
+  });
+
+  const tabThumbnailDeleteBtn = panel.querySelector('#tab-thumbnail-delete-btn') as HTMLButtonElement | null;
+  tabThumbnailDeleteBtn?.addEventListener('click', () => {
+    void handleDeleteTabThumbnail();
+  });
 }
 
 function handleDocumentClick(e: MouseEvent) {
@@ -408,6 +426,9 @@ function handleDocumentClick(e: MouseEvent) {
   const menu = panel.querySelector('#font-size-menu') as HTMLElement | null;
   if (menu && !target.closest('#font-size-control')) {
     closeFontSizeMenu();
+  }
+  if (!target.closest('#tab-thumbnail-menu')) {
+    closeTabThumbnailMenu();
   }
   actions.closeFolderContextMenu();
 }
@@ -842,6 +863,204 @@ async function handleExportData() {
   }
 }
 
+function getPaneTabId(pane: Pane) {
+  return pane === 'left' ? panelState.activeTabId : panelState.rightTabId;
+}
+
+async function convertImageToWebpThumbnail(file: File) {
+  const bitmap = await createImageBitmap(file);
+  const targetWidth = Math.max(1, Math.floor(bitmap.width / 2));
+  const targetHeight = Math.max(1, Math.floor(bitmap.height / 2));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    bitmap.close();
+    throw new Error('Canvas context is not available');
+  }
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(bitmap, 0, 0, targetWidth, targetHeight);
+  bitmap.close();
+
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (result) => {
+        if (!result) {
+          reject(new Error('Failed to convert to WebP'));
+          return;
+        }
+        resolve(result);
+      },
+      'image/webp',
+      0.7
+    );
+  });
+
+  return await blob.arrayBuffer();
+}
+
+async function handleSetThumbnailFromFile(file: File, pane: Pane) {
+  const noteId = getPaneTabId(pane);
+  if (!noteId) return;
+  if (noteId === DRAFT_TAB_ID) {
+    alert('下書きにはサムネを設定できません');
+    return;
+  }
+
+  const current = tabInfoMap[noteId];
+  if (current?.thumbnailPath) {
+    const ok = confirm('既存のサムネがあります。上書きしますか？');
+    if (!ok) return;
+  }
+
+  try {
+    const data = await convertImageToWebpThumbnail(file);
+    const response = await chrome.runtime.sendMessage({
+      type: MessageType.SET_NOTE_THUMBNAIL,
+      noteId,
+      data
+    });
+    if (!response.success) {
+      alert(`サムネ設定に失敗しました: ${response.error}`);
+      return;
+    }
+    const updatedNote = response.data as Note;
+    if (tabInfoMap[noteId]) {
+      tabInfoMap[noteId].thumbnailPath = updatedNote.thumbnailPath;
+    }
+  } catch (error) {
+    console.error('[Content] Failed to set thumbnail:', error);
+    alert('サムネ画像の設定に失敗しました');
+  }
+}
+
+function closeTabThumbnailMenu() {
+  if (!panel) return;
+  const menu = panel.querySelector('#tab-thumbnail-menu') as HTMLElement | null;
+  if (!menu) return;
+  menu.style.display = 'none';
+  menu.removeAttribute('data-note-id');
+
+  const loading = menu.querySelector('#tab-thumbnail-loading') as HTMLElement | null;
+  const img = menu.querySelector('#tab-thumbnail-img') as HTMLImageElement | null;
+  if (loading) {
+    loading.textContent = '';
+    loading.style.display = 'none';
+  }
+  if (img) {
+    img.src = '';
+    img.style.display = 'none';
+  }
+}
+
+async function openTabThumbnailMenu(noteId: string, clientX: number, clientY: number) {
+  if (!panel) return;
+  const menu = panel.querySelector('#tab-thumbnail-menu') as HTMLElement | null;
+  if (!menu) return;
+
+  actions.closeFolderContextMenu();
+  closeTabThumbnailMenu();
+  menu.setAttribute('data-note-id', noteId);
+  menu.style.display = 'block';
+  menu.style.left = '0px';
+  menu.style.top = '0px';
+
+  const panelRect = panel.getBoundingClientRect();
+  const menuRect = menu.getBoundingClientRect();
+  let left = clientX - panelRect.left;
+  let top = clientY - panelRect.top;
+  const maxLeft = Math.max(8, panelRect.width - menuRect.width - 8);
+  const maxTop = Math.max(8, panelRect.height - menuRect.height - 8);
+  left = Math.min(Math.max(8, left), maxLeft);
+  top = Math.min(Math.max(8, top), maxTop);
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+
+  const deleteBtn = menu.querySelector('#tab-thumbnail-delete-btn') as HTMLButtonElement | null;
+  const loading = menu.querySelector('#tab-thumbnail-loading') as HTMLElement | null;
+  const img = menu.querySelector('#tab-thumbnail-img') as HTMLImageElement | null;
+
+  if (deleteBtn) {
+    deleteBtn.disabled = true;
+    deleteBtn.style.display = 'none';
+  }
+  if (img) {
+    img.src = '';
+    img.style.display = 'none';
+  }
+  if (loading) {
+    loading.textContent = '読み込み中...';
+    loading.style.display = 'block';
+  }
+
+  const tab = tabInfoMap[noteId];
+  if (!tab?.thumbnailPath) {
+    if (loading) loading.textContent = 'サムネが設定されていません';
+    return;
+  }
+
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: MessageType.GET_NOTE_THUMBNAIL_URL,
+      noteId
+    });
+
+    if (menu.getAttribute('data-note-id') !== noteId) return;
+
+    if (!response.success) {
+      if (loading) loading.textContent = `表示に失敗しました: ${response.error}`;
+      return;
+    }
+
+    const url = response.data as string;
+    if (loading) loading.style.display = 'none';
+    if (img) {
+      img.src = url;
+      img.style.display = 'block';
+    }
+    if (deleteBtn) {
+      deleteBtn.disabled = false;
+      deleteBtn.style.display = 'inline-block';
+    }
+  } catch (error) {
+    console.error('[Content] Failed to load thumbnail URL:', error);
+    if (menu.getAttribute('data-note-id') !== noteId) return;
+    if (loading) loading.textContent = '表示に失敗しました';
+  }
+}
+
+async function handleDeleteTabThumbnail() {
+  if (!panel) return;
+  const menu = panel.querySelector('#tab-thumbnail-menu') as HTMLElement | null;
+  if (!menu) return;
+  const noteId = menu.getAttribute('data-note-id');
+  if (!noteId) return;
+
+  const ok = confirm('サムネを削除しますか？');
+  if (!ok) return;
+
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: MessageType.DELETE_NOTE_THUMBNAIL,
+      noteId
+    });
+    if (!response.success) {
+      alert(`サムネ削除に失敗しました: ${response.error}`);
+      return;
+    }
+    if (tabInfoMap[noteId]) {
+      delete tabInfoMap[noteId].thumbnailPath;
+    }
+    closeTabThumbnailMenu();
+  } catch (error) {
+    console.error('[Content] Failed to delete thumbnail:', error);
+    alert('サムネ削除に失敗しました');
+  }
+}
+
 function setupTextareaEvents(textarea: HTMLTextAreaElement | null, pane: Pane) {
   if (!textarea) return;
 
@@ -881,6 +1100,35 @@ function setupTextareaEvents(textarea: HTMLTextAreaElement | null, pane: Pane) {
   });
   textarea.addEventListener('mouseup', () => {
     updateAiModalContextIfOpen();
+  });
+
+  textarea.addEventListener('paste', (e: ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const item = Array.from(items).find(entry => entry.kind === 'file' && entry.type.startsWith('image/'));
+    if (!item) return;
+    const file = item.getAsFile();
+    if (!file) return;
+    e.preventDefault();
+    void handleSetThumbnailFromFile(file, pane);
+  });
+
+  textarea.addEventListener('dragover', (e: DragEvent) => {
+    const items = e.dataTransfer?.items;
+    if (!items) return;
+    const hasImage = Array.from(items).some(entry => entry.kind === 'file' && entry.type.startsWith('image/'));
+    if (!hasImage) return;
+    e.preventDefault();
+  });
+
+  textarea.addEventListener('drop', (e: DragEvent) => {
+    const files = e.dataTransfer?.files;
+    if (!files) return;
+    const imageFile = Array.from(files).find(file => file.type.startsWith('image/'));
+    if (!imageFile) return;
+    e.preventDefault();
+    e.stopPropagation();
+    void handleSetThumbnailFromFile(imageFile, pane);
   });
 }
 

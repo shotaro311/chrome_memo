@@ -20,6 +20,7 @@ export interface Note {
   folderId: string;
   title: string;
   content: string; // 本文
+  thumbnailPath?: string; // サムネ（Supabase Storageのパス）
   createdAt: number;
   updatedAt: number;
   lastOpenedAt: number; // 最近使ったメモ用
@@ -32,6 +33,7 @@ export interface NoteMetadata {
   id: string;
   folderId: string;
   title: string;
+  thumbnailPath?: string;
   createdAt: number;
   updatedAt: number;
   lastOpenedAt: number;
@@ -138,6 +140,11 @@ export enum MessageType {
   DELETE_NOTE = 'DELETE_NOTE',
   OPEN_NOTE = 'OPEN_NOTE',
   SAVE_QUICK_MEMO_AS_NOTE = 'SAVE_QUICK_MEMO_AS_NOTE',
+
+  // サムネイル
+  SET_NOTE_THUMBNAIL = 'SET_NOTE_THUMBNAIL',
+  DELETE_NOTE_THUMBNAIL = 'DELETE_NOTE_THUMBNAIL',
+  GET_NOTE_THUMBNAIL_URL = 'GET_NOTE_THUMBNAIL_URL',
 
   // データ取得
   GET_FOLDERS = 'GET_FOLDERS',
@@ -289,6 +296,7 @@ export interface UpdateNoteMessage extends BaseMessage {
   title?: string;
   content?: string;
   folderId?: string;
+  thumbnailPath?: string | null;
 }
 
 /**
@@ -305,6 +313,32 @@ export interface DeleteNoteMessage extends BaseMessage {
 export interface OpenNoteMessage extends BaseMessage {
   type: MessageType.OPEN_NOTE;
   noteId: string;
+}
+
+/**
+ * サムネを設定
+ */
+export interface SetNoteThumbnailMessage extends BaseMessage {
+  type: MessageType.SET_NOTE_THUMBNAIL;
+  noteId: string;
+  data: ArrayBuffer; // image/webp
+}
+
+/**
+ * サムネを削除
+ */
+export interface DeleteNoteThumbnailMessage extends BaseMessage {
+  type: MessageType.DELETE_NOTE_THUMBNAIL;
+  noteId: string;
+}
+
+/**
+ * サムネの署名URLを取得
+ */
+export interface GetNoteThumbnailUrlMessage extends BaseMessage {
+  type: MessageType.GET_NOTE_THUMBNAIL_URL;
+  noteId: string;
+  expiresIn?: number;
 }
 
 /**
@@ -399,6 +433,9 @@ export type Message =
   | UpdateNoteMessage
   | DeleteNoteMessage
   | OpenNoteMessage
+  | SetNoteThumbnailMessage
+  | DeleteNoteThumbnailMessage
+  | GetNoteThumbnailUrlMessage
   | SaveQuickMemoAsNoteMessage
   | GetFoldersMessage
   | GetNotesInFolderMessage
