@@ -937,8 +937,12 @@ const YOUTUBE_OVERLAY_ATTR = 'data-chrome-memo-yt-overlay';
 const YOUTUBE_OVERLAY_LAYER_CLASS = 'chrome-memo-yt-overlay-layer';
 const YOUTUBE_OVERLAY_BTN_CLASS = 'chrome-memo-yt-overlay-btn';
 const YOUTUBE_SCAN_DELAY_MS = 300;
+const YOUTUBE_FALLBACK_SCAN_INTERVAL_MS = 500;
+const YOUTUBE_FALLBACK_SCAN_WINDOW_MS = 5000;
 let youtubeObserver: MutationObserver | null = null;
 let youtubeScanTimer: number | null = null;
+let youtubeFallbackInterval: number | null = null;
+let youtubeNavigationPatched = false;
 const youtubeInFlight = new Set<string>();
 
 // アイコンURLをキャッシュ（コンテキスト無効化対策）
@@ -973,7 +977,65 @@ function cleanupYoutubeOverlay() {
     clearTimeout(youtubeScanTimer);
     youtubeScanTimer = null;
   }
+  if (youtubeFallbackInterval) {
+    clearInterval(youtubeFallbackInterval);
+    youtubeFallbackInterval = null;
+  }
   console.log('[YouTube Overlay] Cleaned up due to context invalidation');
+}
+
+function startYoutubeFallbackScanWindow(reason: string) {
+  if (youtubeFallbackInterval) {
+    clearInterval(youtubeFallbackInterval);
+    youtubeFallbackInterval = null;
+  }
+  const startedAt = Date.now();
+  console.log(`[YouTube Overlay] Fallback scan window start (${reason})`);
+  youtubeFallbackInterval = window.setInterval(() => {
+    if (!isExtensionContextValid()) {
+      cleanupYoutubeOverlay();
+      return;
+    }
+    scheduleYoutubeScan();
+    if (Date.now() - startedAt >= YOUTUBE_FALLBACK_SCAN_WINDOW_MS) {
+      if (youtubeFallbackInterval) {
+        clearInterval(youtubeFallbackInterval);
+        youtubeFallbackInterval = null;
+      }
+    }
+  }, YOUTUBE_FALLBACK_SCAN_INTERVAL_MS);
+}
+
+function installYoutubeNavigationFallback() {
+  if (youtubeNavigationPatched) return;
+  youtubeNavigationPatched = true;
+
+  const dispatch = () => {
+    if (!isExtensionContextValid()) return;
+    window.dispatchEvent(new Event('chrome-memo-yt-navigate'));
+  };
+
+  const originalPushState = history.pushState;
+  history.pushState = function (...args: Parameters<History['pushState']>) {
+    const result = originalPushState.apply(this, args as any);
+    dispatch();
+    return result;
+  };
+
+  const originalReplaceState = history.replaceState;
+  history.replaceState = function (...args: Parameters<History['replaceState']>) {
+    const result = originalReplaceState.apply(this, args as any);
+    dispatch();
+    return result;
+  };
+
+  window.addEventListener('popstate', dispatch);
+  window.addEventListener('chrome-memo-yt-navigate', () => {
+    if (!isExtensionContextValid()) return;
+    console.log('[YouTube Overlay] history navigation detected');
+    scheduleYoutubeScan();
+    startYoutubeFallbackScanWindow('history');
+  });
 }
 
 function setupYoutubeOverlay() {
@@ -1004,6 +1066,8 @@ function setupYoutubeOverlay() {
       scheduleYoutubeScan();
     }
   }, 500);
+  startYoutubeFallbackScanWindow('init');
+  installYoutubeNavigationFallback();
 
   if (!youtubeObserver) {
     youtubeObserver = new MutationObserver(() => {
@@ -1023,6 +1087,7 @@ function setupYoutubeOverlay() {
     if (!isExtensionContextValid()) return;
     console.log('[YouTube Overlay] yt-navigate-finish event fired');
     scheduleYoutubeScan();
+    startYoutubeFallbackScanWindow('yt-navigate-finish');
   });
 
   // 追加: ページ遷移検知用のイベント
@@ -1030,6 +1095,7 @@ function setupYoutubeOverlay() {
     if (!isExtensionContextValid()) return;
     console.log('[YouTube Overlay] yt-page-data-updated event fired');
     scheduleYoutubeScan();
+    startYoutubeFallbackScanWindow('yt-page-data-updated');
   });
 }
 
