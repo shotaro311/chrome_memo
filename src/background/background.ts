@@ -251,14 +251,18 @@ function extractCaptionTracksFromPlayerResponse(playerResponse: any) {
   return Array.isArray(tracks) ? tracks : null;
 }
 
-async function fetchCaptionItemsFromBaseUrl(baseUrl: string) {
+async function fetchCaptionItemsFromBaseUrl(baseUrl: string, referrerUrl?: string) {
   const candidates = [
     { label: 'json3', url: withSearchParam(baseUrl, 'fmt', 'json3') },
     { label: 'srv3', url: withSearchParam(baseUrl, 'fmt', 'srv3') },
   ];
 
   for (const candidate of candidates) {
-    const response = await fetch(candidate.url, { cache: 'no-store' });
+    const response = await fetch(candidate.url, {
+      cache: 'no-store',
+      credentials: 'include',
+      referrer: referrerUrl,
+    });
     const contentType = response.headers.get('content-type') ?? '';
     if (!response.ok) {
       console.warn('[Background] Caption fetch failed:', candidate.label, response.status);
@@ -295,6 +299,7 @@ async function fetchCaptionTracksViaInnerTubePlayer(videoId: string, apiKey: str
 
   const response = await fetch(endpoint, {
     method: 'POST',
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       'X-Youtube-Client-Name': '1',
@@ -314,7 +319,7 @@ async function fetchCaptionTracksViaInnerTubePlayer(videoId: string, apiKey: str
 async function fetchYoutubeTranscript(videoId: string) {
   console.log('[Background] Fetching transcript for video:', videoId);
   const watchUrl = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
-  const response = await fetch(watchUrl, { credentials: 'omit' });
+  const response = await fetch(watchUrl, { credentials: 'include' });
   if (!response.ok) {
     return { success: false as const, error: `YouTubeの取得に失敗しました（HTTP ${response.status}）` };
   }
@@ -359,7 +364,7 @@ async function fetchYoutubeTranscript(videoId: string) {
   }
 
   console.log('[Background] Fetching caption from URL');
-  const items = await fetchCaptionItemsFromBaseUrl(baseUrl);
+  const items = await fetchCaptionItemsFromBaseUrl(baseUrl, watchUrl);
   console.log('[Background] Parsed items count:', items.length);
 
   if (items.length === 0) {
