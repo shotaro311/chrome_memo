@@ -246,6 +246,14 @@ function extractInnertubeApiKey(html: string) {
   return html.match(/"INNERTUBE_API_KEY":"([^"]+)"/)?.[1] ?? null;
 }
 
+function extractInnertubeClientVersion(html: string) {
+  return (
+    html.match(/"INNERTUBE_CONTEXT_CLIENT_VERSION":"([^"]+)"/)?.[1] ??
+    html.match(/"INNERTUBE_CLIENT_VERSION":"([^"]+)"/)?.[1] ??
+    null
+  );
+}
+
 function extractCaptionTracksFromPlayerResponse(playerResponse: any) {
   const tracks = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
   return Array.isArray(tracks) ? tracks : null;
@@ -283,13 +291,13 @@ async function fetchCaptionItemsFromBaseUrl(baseUrl: string, referrerUrl?: strin
   return [];
 }
 
-async function fetchCaptionTracksViaInnerTubePlayer(videoId: string, apiKey: string) {
+async function fetchCaptionTracksViaInnerTubePlayer(videoId: string, apiKey: string, clientVersion?: string) {
   const endpoint = `https://www.youtube.com/youtubei/v1/player?key=${encodeURIComponent(apiKey)}`;
   const payload = {
     context: {
       client: {
         clientName: 'WEB',
-        clientVersion: '2.20241201.00.00',
+        clientVersion: clientVersion || '2.20241201.00.00',
         hl: 'ja',
         gl: 'JP',
       },
@@ -327,19 +335,21 @@ async function fetchYoutubeTranscript(videoId: string) {
   const html = await response.text();
   console.log('[Background] HTML length:', html.length);
 
+  const apiKey = extractInnertubeApiKey(html);
+  const clientVersion = extractInnertubeClientVersion(html);
+
   const playerResponse = extractJsonObjectFromHtml(html, 'ytInitialPlayerResponse');
   let tracks = extractCaptionTracksFromPlayerResponse(playerResponse);
   console.log('[Background] playerResponse found:', !!playerResponse);
   console.log('[Background] tracks:', tracks ? `found ${tracks.length}` : 'not found');
 
   if (!tracks || tracks.length === 0) {
-    const apiKey = extractInnertubeApiKey(html);
     if (!apiKey) {
       return { success: false as const, error: 'INNERTUBE_API_KEYが見つかりませんでした' };
     }
 
     try {
-      tracks = await fetchCaptionTracksViaInnerTubePlayer(videoId, apiKey);
+      tracks = await fetchCaptionTracksViaInnerTubePlayer(videoId, apiKey, clientVersion || undefined);
       console.log('[Background] tracks (InnerTube):', tracks ? `found ${tracks.length}` : 'not found');
     } catch (error) {
       console.warn('[Background] InnerTube player fallback failed:', error);
@@ -358,13 +368,34 @@ async function fetchYoutubeTranscript(videoId: string) {
   const track = selectCaptionTrack(tracks);
   console.log('[Background] Selected track:', track?.languageCode);
 
+  const preferredLanguageCode = track?.languageCode;
   const baseUrl = track?.baseUrl;
   if (!baseUrl) {
     return { success: false as const, error: '字幕URLが見つかりませんでした' };
   }
 
   console.log('[Background] Fetching caption from URL');
-  const items = await fetchCaptionItemsFromBaseUrl(baseUrl, watchUrl);
+  let items = await fetchCaptionItemsFromBaseUrl(baseUrl, watchUrl);
+
+  if (items.length === 0 && apiKey) {
+    try {
+      const refreshedTracks = await fetchCaptionTracksViaInnerTubePlayer(videoId, apiKey, clientVersion || undefined);
+      if (refreshedTracks && refreshedTracks.length > 0) {
+        const refreshedTrack =
+          (preferredLanguageCode
+            ? refreshedTracks.find((t: { languageCode?: string }) => t.languageCode === preferredLanguageCode)
+            : null) || selectCaptionTrack(refreshedTracks);
+
+        const refreshedBaseUrl = refreshedTrack?.baseUrl;
+        if (refreshedBaseUrl && refreshedBaseUrl !== baseUrl) {
+          console.log('[Background] Retrying caption fetch with InnerTube baseUrl');
+          items = await fetchCaptionItemsFromBaseUrl(refreshedBaseUrl, watchUrl);
+        }
+      }
+    } catch (error) {
+      console.warn('[Background] InnerTube retry failed:', error);
+    }
+  }
   console.log('[Background] Parsed items count:', items.length);
 
   if (items.length === 0) {
