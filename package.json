@@ -6,7 +6,8 @@
   "scripts": {
     "build": "webpack --mode production",
     "dev": "webpack --mode development --watch",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "server:start": "node server/index.mjs"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.253",
@@ -19,6 +20,10 @@
     "webpack-cli": "^5.1.4"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.87.1"
+    "@supabase/supabase-js": "^2.87.1",
+    "@distube/ytdl-core": "^4.16.12",
+    "glob": "^13.0.0",
+    "youtube-caption-extractor": "^1.9.1",
+    "youtubei.js": "^16.0.1"
   }
 }
