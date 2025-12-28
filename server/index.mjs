@@ -115,18 +115,29 @@ async function fetchTranscriptFromYoutubei(url) {
 
 async function fetchTranscriptFast(url) {
   const videoId = ytdl.getVideoID(url);
+  const errors = [];
+
   try {
     const extractorSegments = await fetchTranscriptFromCaptionExtractor(videoId);
-    if (extractorSegments.length > 0) return extractorSegments;
-  } catch {
-    // ignore and fallback
+    if (extractorSegments.length > 0) {
+      return { segments: extractorSegments, errors };
+    }
+    errors.push('caption-extractor: empty');
+  } catch (error) {
+    errors.push(`caption-extractor: ${(error && error.message) || 'failed'}`);
   }
+
   try {
     const fallback = await fetchTranscriptFromYoutubei(url);
-    return fallback;
-  } catch {
-    return [];
+    if (fallback.length > 0) {
+      return { segments: fallback, errors };
+    }
+    errors.push('youtubei: empty');
+  } catch (error) {
+    errors.push(`youtubei: ${(error && error.message) || 'failed'}`);
   }
+
+  return { segments: [], errors };
 }
 
 async function extractTranscriptOnly(url) {
@@ -137,13 +148,17 @@ async function extractTranscriptOnly(url) {
   const videoId = ytdl.getVideoID(url);
 
   let transcriptSegments = [];
+  let transcriptErrors = [];
   try {
-    transcriptSegments = await fetchTranscriptFast(url);
+    const result = await fetchTranscriptFast(url);
+    transcriptSegments = result.segments;
+    transcriptErrors = result.errors;
   } catch {
     transcriptSegments = [];
   }
   if (transcriptSegments.length === 0) {
-    throw new Error('Could not retrieve transcript. The video might not have subtitles, or the request timed out.');
+    const detail = transcriptErrors.length > 0 ? ` Details: ${transcriptErrors.join(' | ')}` : '';
+    throw new Error(`Could not retrieve transcript.${detail}`);
   }
 
   const transcriptForJson = transcriptSegments.map((segment) => {
@@ -214,7 +229,8 @@ const server = http.createServer(async (req, res) => {
       const message = toUserMessage(rawMessage);
       const retryable = isRetryableError(rawMessage);
       const status = rawMessage.includes('Invalid YouTube URL') ? 400 : 500;
-      jsonResponse(res, status, { error: message, retryable });
+      const details = rawMessage.includes('Could not retrieve transcript') ? rawMessage : undefined;
+      jsonResponse(res, status, { error: message, retryable, ...(details ? { details } : {}) });
     } finally {
       await cleanupPlayerScripts();
     }
