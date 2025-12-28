@@ -1,4 +1,4 @@
-import type { AppSettings, Folder, Note, PanelState, QuickMemo } from '../types';
+import type { AppSettings, Folder, Note, PanelState, QuickMemo, TranscriptItem } from '../types';
 import { INBOX_FOLDER_ID, LIMITS, MessageType } from '../types';
 import { escapeHtml, focusMemoTextarea, getTextarea } from './panelDom';
 import { createPanelActions } from './panelActions';
@@ -27,6 +27,9 @@ let folders: Folder[] = [];
 let draftMemo: QuickMemo = { content: '', updatedAt: Date.now() };
 
 const timers = { autosaveTimer: null as number | null };
+
+const GEMINI_CUSTOM_PROMPT_KEY = 'geminiCustomPrompt';
+const GEMINI_SUMMARY_PROMPT_KEY = 'geminiSummaryPrompt';
 
 const tabInfoMap: Record<string, TabInfo> = {};
 const tabContentCache: Record<string, string> = {};
@@ -139,6 +142,8 @@ function init() {
     handleMessage(message);
     sendResponse({ success: true });
   });
+
+  setupYoutubeOverlay();
 
   console.log('[Content] Initialized');
 }
@@ -264,6 +269,8 @@ function setupEventListeners() {
       case 'auth-btn':
         void actions.openAuthModal();
         void refreshGeminiApiKeyUI();
+        void refreshGeminiCustomPromptUI();
+        void refreshGeminiSummaryPromptUI();
         break;
       case 'ai-btn':
         openAiModal();
@@ -335,6 +342,12 @@ function setupEventListeners() {
         break;
       case 'clear-gemini-custom-prompt-btn':
         void handleClearGeminiCustomPrompt();
+        break;
+      case 'save-gemini-summary-prompt-btn':
+        void handleSaveGeminiSummaryPrompt();
+        break;
+      case 'clear-gemini-summary-prompt-btn':
+        void handleClearGeminiSummaryPrompt();
         break;
 	      case 'export-data-btn':
 	        void handleExportData();
@@ -776,8 +789,15 @@ async function loadGeminiApiKey() {
 }
 
 async function loadGeminiCustomPrompt() {
-  const result = await chrome.storage.local.get('geminiCustomPrompt');
-  return typeof result.geminiCustomPrompt === 'string' ? result.geminiCustomPrompt : null;
+  const result = await chrome.storage.local.get(GEMINI_CUSTOM_PROMPT_KEY);
+  const value = result[GEMINI_CUSTOM_PROMPT_KEY];
+  return typeof value === 'string' ? value : null;
+}
+
+async function loadGeminiSummaryPrompt() {
+  const result = await chrome.storage.local.get(GEMINI_SUMMARY_PROMPT_KEY);
+  const value = result[GEMINI_SUMMARY_PROMPT_KEY];
+  return typeof value === 'string' ? value : null;
 }
 
 async function refreshGeminiCustomPromptUI() {
@@ -803,7 +823,7 @@ async function handleSaveGeminiCustomPrompt() {
     return;
   }
 
-  await chrome.storage.local.set({ geminiCustomPrompt: prompt });
+  await chrome.storage.local.set({ [GEMINI_CUSTOM_PROMPT_KEY]: prompt });
   status.textContent = '保存済み';
 }
 
@@ -816,7 +836,48 @@ async function handleClearGeminiCustomPrompt() {
   const ok = confirm('保存済みのカスタムプロンプトをクリアしますか？');
   if (!ok) return;
 
-  await chrome.storage.local.remove('geminiCustomPrompt');
+  await chrome.storage.local.remove(GEMINI_CUSTOM_PROMPT_KEY);
+  input.value = '';
+  status.textContent = '未保存';
+}
+
+async function refreshGeminiSummaryPromptUI() {
+  if (!panel) return;
+  const input = panel.querySelector('#gemini-summary-prompt-input') as HTMLTextAreaElement | null;
+  const status = panel.querySelector('#gemini-summary-prompt-status') as HTMLElement | null;
+  if (!input || !status) return;
+
+  const prompt = await loadGeminiSummaryPrompt();
+  input.value = prompt || '';
+  status.textContent = prompt ? '保存済み' : '未保存';
+}
+
+async function handleSaveGeminiSummaryPrompt() {
+  if (!panel) return;
+  const input = panel.querySelector('#gemini-summary-prompt-input') as HTMLTextAreaElement | null;
+  const status = panel.querySelector('#gemini-summary-prompt-status') as HTMLElement | null;
+  if (!input || !status) return;
+
+  const prompt = input.value.trim();
+  if (!prompt) {
+    alert('プロンプトを入力してください');
+    return;
+  }
+
+  await chrome.storage.local.set({ [GEMINI_SUMMARY_PROMPT_KEY]: prompt });
+  status.textContent = '保存済み';
+}
+
+async function handleClearGeminiSummaryPrompt() {
+  if (!panel) return;
+  const input = panel.querySelector('#gemini-summary-prompt-input') as HTMLTextAreaElement | null;
+  const status = panel.querySelector('#gemini-summary-prompt-status') as HTMLElement | null;
+  if (!input || !status) return;
+
+  const ok = confirm('保存済みの要約プロンプトをクリアしますか？');
+  if (!ok) return;
+
+  await chrome.storage.local.remove(GEMINI_SUMMARY_PROMPT_KEY);
   input.value = '';
   status.textContent = '未保存';
 }
@@ -860,6 +921,499 @@ async function handleDeleteGeminiApiKey() {
   await chrome.storage.local.remove('geminiApiKey');
   input.value = '';
   status.textContent = '未保存';
+}
+
+// ========================================
+// YouTube要約オーバーレイ
+// ========================================
+
+type YoutubeVideoInfo = {
+  videoId: string;
+  url: string;
+  title: string;
+};
+
+const YOUTUBE_OVERLAY_ATTR = 'data-chrome-memo-yt-overlay';
+const YOUTUBE_OVERLAY_LAYER_CLASS = 'chrome-memo-yt-overlay-layer';
+const YOUTUBE_OVERLAY_BTN_CLASS = 'chrome-memo-yt-overlay-btn';
+const YOUTUBE_SCAN_DELAY_MS = 300;
+let youtubeObserver: MutationObserver | null = null;
+let youtubeScanTimer: number | null = null;
+const youtubeInFlight = new Set<string>();
+
+// アイコンURLをキャッシュ（コンテキスト無効化対策）
+let cachedIconUrl: string | null = null;
+
+function isExtensionContextValid(): boolean {
+  try {
+    // chrome.runtimeが存在し、idが取得できればコンテキストは有効
+    return !!(chrome.runtime && chrome.runtime.id);
+  } catch {
+    return false;
+  }
+}
+
+function getCachedIconUrl(): string | null {
+  if (cachedIconUrl) return cachedIconUrl;
+  if (!isExtensionContextValid()) return null;
+  try {
+    cachedIconUrl = chrome.runtime.getURL('icons/icon16.png');
+    return cachedIconUrl;
+  } catch {
+    return null;
+  }
+}
+
+function cleanupYoutubeOverlay() {
+  if (youtubeObserver) {
+    youtubeObserver.disconnect();
+    youtubeObserver = null;
+  }
+  if (youtubeScanTimer) {
+    clearTimeout(youtubeScanTimer);
+    youtubeScanTimer = null;
+  }
+  console.log('[YouTube Overlay] Cleaned up due to context invalidation');
+}
+
+function setupYoutubeOverlay() {
+  console.log('[YouTube Overlay] Setup called, hostname:', location.hostname);
+  if (!isYoutubeHost()) {
+    console.log('[YouTube Overlay] Not YouTube host, skipping');
+    return;
+  }
+
+  // コンテキストチェックとアイコンURLの事前キャッシュ
+  if (!isExtensionContextValid()) {
+    console.log('[YouTube Overlay] Extension context invalid, skipping');
+    return;
+  }
+
+  // アイコンURLを事前にキャッシュ
+  const iconUrl = getCachedIconUrl();
+  if (!iconUrl) {
+    console.log('[YouTube Overlay] Failed to cache icon URL');
+    return;
+  }
+
+  console.log('[YouTube Overlay] YouTube detected, initializing overlay system');
+
+  // 初回スキャンを少し遅延させてDOMの準備を待つ
+  setTimeout(() => {
+    if (isExtensionContextValid()) {
+      scheduleYoutubeScan();
+    }
+  }, 500);
+
+  if (!youtubeObserver) {
+    youtubeObserver = new MutationObserver(() => {
+      // コンテキストが無効になったらクリーンアップ
+      if (!isExtensionContextValid()) {
+        cleanupYoutubeOverlay();
+        return;
+      }
+      scheduleYoutubeScan();
+    });
+    youtubeObserver.observe(document.body, { childList: true, subtree: true });
+    console.log('[YouTube Overlay] MutationObserver attached');
+  }
+
+  // YouTubeのSPA遷移イベントをリッスン
+  document.addEventListener('yt-navigate-finish', () => {
+    if (!isExtensionContextValid()) return;
+    console.log('[YouTube Overlay] yt-navigate-finish event fired');
+    scheduleYoutubeScan();
+  });
+
+  // 追加: ページ遷移検知用のイベント
+  document.addEventListener('yt-page-data-updated', () => {
+    if (!isExtensionContextValid()) return;
+    console.log('[YouTube Overlay] yt-page-data-updated event fired');
+    scheduleYoutubeScan();
+  });
+}
+
+function isYoutubeHost() {
+  return /(^|\.)youtube\.com$/.test(location.hostname);
+}
+
+function scheduleYoutubeScan() {
+  if (youtubeScanTimer) return;
+  youtubeScanTimer = window.setTimeout(() => {
+    youtubeScanTimer = null;
+    scanYoutubeThumbnails();
+  }, YOUTUBE_SCAN_DELAY_MS);
+}
+
+function scanYoutubeThumbnails() {
+  // コンテキストチェック
+  if (!isExtensionContextValid()) {
+    cleanupYoutubeOverlay();
+    return;
+  }
+
+  // 複数のセレクタに対応（YouTubeのDOM構造変更に対応）
+  const containerSelectors = [
+    'ytd-thumbnail:not([data-chrome-memo-yt-overlay])',
+    'yt-thumbnail-view-model:not([data-chrome-memo-yt-overlay])',
+    'ytd-playlist-thumbnail:not([data-chrome-memo-yt-overlay])'
+  ];
+
+  const containers = document.querySelectorAll(containerSelectors.join(', '));
+  console.log(`[YouTube Overlay] Found ${containers.length} thumbnail containers`);
+
+  containers.forEach((container, index) => {
+    const element = container as HTMLElement;
+
+    // 複数のアンカーセレクタを試す
+    const anchorSelectors = [
+      'a#thumbnail',
+      'a[href*="/watch"]',
+      'a[href*="/shorts/"]',
+      'a.yt-simple-endpoint[href*="/watch"]'
+    ];
+
+    let anchor: HTMLElement | null = null;
+
+    // 1. まず要素内部を探す
+    for (const selector of anchorSelectors) {
+      anchor = element.querySelector(selector) as HTMLElement | null;
+      if (anchor) break;
+    }
+
+    // 2. 親要素から探す（各種レンダラー）
+    if (!anchor) {
+      const parentSelectors = [
+        'ytd-rich-item-renderer',
+        'ytd-video-renderer',
+        'ytd-grid-video-renderer',
+        'ytd-compact-video-renderer',
+        'ytd-reel-item-renderer',
+        'ytd-rich-grid-media'
+      ];
+      for (const parentSelector of parentSelectors) {
+        const parent = element.closest(parentSelector);
+        if (parent) {
+          for (const selector of anchorSelectors) {
+            anchor = parent.querySelector(selector) as HTMLElement | null;
+            if (anchor) break;
+          }
+          if (anchor) break;
+        }
+      }
+    }
+
+    // 3. 兄弟要素を探す（yt-thumbnail-view-model用）
+    if (!anchor && element.parentElement) {
+      for (const selector of anchorSelectors) {
+        anchor = element.parentElement.querySelector(selector) as HTMLElement | null;
+        if (anchor) break;
+      }
+    }
+
+    // 4. 要素自体がリンク内にある場合
+    if (!anchor) {
+      const closestAnchor = element.closest('a[href*="/watch"], a[href*="/shorts/"]') as HTMLElement | null;
+      if (closestAnchor) {
+        anchor = closestAnchor;
+      }
+    }
+
+    if (!anchor) {
+      if (index < 3) {
+        console.log(`[YouTube Overlay] No anchor found for container ${index}:`, element.tagName, element.className);
+      }
+      return;
+    }
+
+    const info = extractYoutubeVideoInfo(anchor);
+    if (!info) {
+      if (index < 3) {
+        console.log(`[YouTube Overlay] No video info extracted for container ${index}, href:`, anchor.getAttribute('href'));
+      }
+      return;
+    }
+
+    element.classList.add('chrome-memo-yt-thumb');
+    const computed = getComputedStyle(element);
+    if (computed.position === 'static') {
+      element.style.position = 'relative';
+    }
+
+    const existingButton = element.querySelector(
+      `.${YOUTUBE_OVERLAY_BTN_CLASS}`
+    ) as HTMLButtonElement | null;
+    if (existingButton) {
+      updateYoutubeOverlayButton(existingButton, info);
+      element.setAttribute(YOUTUBE_OVERLAY_ATTR, 'true');
+      return;
+    }
+
+    const layer = createYoutubeOverlayLayer(info);
+    if (!layer) {
+      console.log(`[YouTube Overlay] Failed to create layer for video: ${info.videoId}`);
+      return;
+    }
+    element.appendChild(layer);
+    element.setAttribute(YOUTUBE_OVERLAY_ATTR, 'true');
+    console.log(`[YouTube Overlay] Added overlay for video: ${info.videoId}`);
+  });
+}
+
+function extractYoutubeVideoInfo(anchor: Element): YoutubeVideoInfo | null {
+  const href = anchor.getAttribute('href') || (anchor as HTMLAnchorElement).href || '';
+  const videoId = extractYoutubeVideoId(href);
+  if (!videoId) return null;
+
+  const url = new URL(href, location.origin).toString();
+  const title = extractYoutubeVideoTitle(anchor);
+  return { videoId, url, title };
+}
+
+function extractYoutubeVideoId(href: string) {
+  try {
+    // 空のhrefを除外
+    if (!href || href === '#') return null;
+
+    const url = new URL(href, location.origin);
+
+    // /watch?v=xxx 形式
+    if (url.pathname === '/watch') {
+      return url.searchParams.get('v');
+    }
+
+    // /shorts/xxx 形式（ショート動画）
+    const shortsMatch = url.pathname.match(/^\/shorts\/([a-zA-Z0-9_-]{11})/);
+    if (shortsMatch) {
+      return shortsMatch[1];
+    }
+
+    // /embed/xxx 形式
+    const embedMatch = url.pathname.match(/^\/embed\/([a-zA-Z0-9_-]{11})/);
+    if (embedMatch) {
+      return embedMatch[1];
+    }
+
+    // hrefにvパラメータが含まれている場合（相対URL等）
+    const vParam = url.searchParams.get('v');
+    if (vParam && /^[a-zA-Z0-9_-]{11}$/.test(vParam)) {
+      return vParam;
+    }
+
+    return null;
+  } catch {
+    // URLパース失敗時は正規表現でv=を探す
+    const match = href.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
+    return match ? match[1] : null;
+  }
+}
+
+function extractYoutubeVideoTitle(anchor: Element) {
+  const container = anchor.closest(
+    'ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer, ytd-playlist-renderer'
+  );
+  const titleElement = container?.querySelector('#video-title') as HTMLElement | null;
+  const rawTitle =
+    titleElement?.getAttribute('title') ||
+    titleElement?.textContent ||
+    anchor.getAttribute('title') ||
+    anchor.getAttribute('aria-label') ||
+    '';
+  return rawTitle.trim();
+}
+
+function createYoutubeOverlayButton(info: YoutubeVideoInfo): HTMLButtonElement | null {
+  // キャッシュされたアイコンURLを使用
+  const iconUrl = getCachedIconUrl();
+  if (!iconUrl) {
+    console.log('[YouTube Overlay] Cannot create button: icon URL not available');
+    return null;
+  }
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = YOUTUBE_OVERLAY_BTN_CLASS;
+  button.title = '字幕を要約してクイックメモに保存';
+  button.setAttribute('aria-label', '字幕を要約してクイックメモに保存');
+  updateYoutubeOverlayButton(button, info);
+
+  const icon = document.createElement('img');
+  icon.className = 'chrome-memo-yt-overlay-icon';
+  icon.src = iconUrl;
+  icon.alt = '';
+
+  const spinner = document.createElement('span');
+  spinner.className = 'chrome-memo-yt-overlay-spinner';
+
+  button.appendChild(icon);
+  button.appendChild(spinner);
+
+  button.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    void handleYoutubeOverlayClick(button);
+  });
+
+  return button;
+}
+
+function updateYoutubeOverlayButton(button: HTMLButtonElement, info: YoutubeVideoInfo) {
+  button.dataset.videoId = info.videoId;
+  button.dataset.videoUrl = info.url;
+  button.dataset.videoTitle = info.title;
+}
+
+function createYoutubeOverlayLayer(info: YoutubeVideoInfo): HTMLDivElement | null {
+  const button = createYoutubeOverlayButton(info);
+  if (!button) return null;
+
+  const layer = document.createElement('div');
+  layer.className = YOUTUBE_OVERLAY_LAYER_CLASS;
+  layer.appendChild(button);
+  return layer;
+}
+
+function setYoutubeOverlayLoading(button: HTMLButtonElement, loading: boolean) {
+  button.classList.toggle('is-loading', loading);
+  button.disabled = loading;
+}
+
+function setYoutubeOverlayError(button: HTMLButtonElement) {
+  button.classList.add('is-error');
+  window.setTimeout(() => button.classList.remove('is-error'), 2000);
+}
+
+async function handleYoutubeOverlayClick(button: HTMLButtonElement) {
+  const videoId = button.dataset.videoId || '';
+  if (!videoId) return;
+  if (youtubeInFlight.has(videoId)) return;
+
+  youtubeInFlight.add(videoId);
+  setYoutubeOverlayLoading(button, true);
+
+  try {
+    const transcript = await requestYoutubeTranscript(videoId);
+    const summary = await summarizeYoutubeTranscript({
+      transcript,
+      title: button.dataset.videoTitle || '',
+      url: button.dataset.videoUrl || ''
+    });
+    await updateQuickMemoFromSummary(summary);
+  } catch (error) {
+    console.error('[Content] YouTube summary failed:', error);
+    alert(typeof error === 'string' ? error : String(error ?? '要約に失敗しました'));
+    setYoutubeOverlayError(button);
+  } finally {
+    setYoutubeOverlayLoading(button, false);
+    youtubeInFlight.delete(videoId);
+  }
+}
+
+
+// YouTube字幕取得（Background経由でMAINワールドで実行、CORS回避）
+async function requestYoutubeTranscript(videoId: string): Promise<TranscriptItem[]> {
+  console.log('[Content] Fetching transcript for video:', videoId);
+
+  // Background.tsのFETCH_TRANSCRIPT_MAIN_WORLDを使用してMAINワールドで取得
+  const response = await chrome.runtime.sendMessage({
+    type: MessageType.FETCH_TRANSCRIPT_MAIN_WORLD,
+    videoId
+  });
+
+  if (!response?.success) {
+    throw new Error(response?.error || '字幕の取得に失敗しました');
+  }
+
+  const items = response.data as TranscriptItem[];
+  console.log('[Content] Received transcript:', items.length, 'items');
+
+  if (!items || items.length === 0) {
+    throw new Error('字幕が空でした');
+  }
+
+  return items;
+}
+
+
+function buildTranscriptText(items: TranscriptItem[]) {
+  return items
+    .map((item) => (item.time ? `[${item.time}] ${item.text}` : item.text))
+    .join('\n');
+}
+
+function buildYoutubeSummaryPrompt(params: {
+  transcript: string;
+  title: string;
+  url: string;
+  customPrompt?: string;
+}) {
+  const instruction =
+    params.customPrompt?.trim() || '日本語で要約し、重要ポイントを箇条書きでまとめてください。';
+
+  const lines = [
+    'あなたはYouTube動画の字幕を要約するアシスタントです。',
+    '出力は要約結果のみ（余計な説明は不要）で返してください。',
+    '',
+    '# 指示',
+    instruction,
+    '',
+    '# 動画情報',
+    params.title ? `タイトル: ${params.title}` : 'タイトル: （不明）',
+    params.url ? `URL: ${params.url}` : 'URL: （不明）',
+    '',
+    '# 字幕',
+    params.transcript
+  ];
+
+  return lines.join('\n');
+}
+
+async function summarizeYoutubeTranscript(params: {
+  transcript: TranscriptItem[];
+  title: string;
+  url: string;
+}) {
+  const transcriptText = buildTranscriptText(params.transcript);
+  if (!transcriptText.trim()) {
+    throw new Error('字幕が空でした');
+  }
+
+  const customPrompt = await loadGeminiSummaryPrompt();
+  const prompt = buildYoutubeSummaryPrompt({
+    transcript: transcriptText,
+    title: params.title,
+    url: params.url,
+    customPrompt: customPrompt || undefined
+  });
+
+  const response = await chrome.runtime.sendMessage({
+    type: MessageType.GEMINI_GENERATE,
+    prompt
+  });
+
+  if (!response?.success) {
+    throw new Error(response?.error || '要約の生成に失敗しました');
+  }
+
+  const summary = typeof response.data === 'string' ? response.data.trim() : String(response.data ?? '').trim();
+  if (!summary) {
+    throw new Error('要約結果が空でした');
+  }
+  return summary;
+}
+
+async function updateQuickMemoFromSummary(summary: string) {
+  const response = await chrome.runtime.sendMessage({
+    type: MessageType.UPDATE_QUICK_MEMO,
+    content: summary
+  });
+
+  if (!response?.success) {
+    throw new Error(response?.error || 'クイックメモの更新に失敗しました');
+  }
+
+  await actions.loadData();
+  view.renderAll();
 }
 
 function handleTogglePanelSize() {

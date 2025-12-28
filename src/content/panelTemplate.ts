@@ -151,6 +151,35 @@ export function getPanelHtml(): string {
             </div>
             <p class="api-key-status" id="gemini-api-key-status">未保存</p>
           </div>
+          <div class="api-key-section">
+            <div class="ai-settings-title">AIプロンプト設定</div>
+            <div class="form-group">
+              <label for="gemini-custom-prompt-input">AIチャット用プロンプト</label>
+              <textarea
+                id="gemini-custom-prompt-input"
+                class="save-input ai-textarea"
+                placeholder="例: 日本語で、箇条書き中心で、丁寧語で"
+              ></textarea>
+              <div class="ai-settings-actions">
+                <button class="btn-primary" id="save-gemini-custom-prompt-btn">保存</button>
+                <button class="btn-secondary" id="clear-gemini-custom-prompt-btn">クリア</button>
+              </div>
+              <p class="api-key-status" id="gemini-custom-prompt-status">未保存</p>
+            </div>
+            <div class="form-group">
+              <label for="gemini-summary-prompt-input">AI要約用プロンプト</label>
+              <textarea
+                id="gemini-summary-prompt-input"
+                class="save-input ai-textarea"
+                placeholder="例: 重要ポイントを3〜5点で要約して"
+              ></textarea>
+              <div class="ai-settings-actions">
+                <button class="btn-primary" id="save-gemini-summary-prompt-btn">保存</button>
+                <button class="btn-secondary" id="clear-gemini-summary-prompt-btn">クリア</button>
+              </div>
+              <p class="api-key-status" id="gemini-summary-prompt-status">未保存</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -161,27 +190,10 @@ export function getPanelHtml(): string {
         <div class="ai-modal-header">
           <h3>AI</h3>
           <div class="ai-modal-header-actions">
-            <button class="close-modal-btn" id="ai-settings-btn" title="AI設定">⚙</button>
             <button class="close-modal-btn" id="close-ai-modal-btn">×</button>
           </div>
         </div>
         <div class="ai-modal-body">
-          <div class="ai-settings" id="ai-settings" style="display: none;">
-            <div class="ai-settings-title">AI設定</div>
-            <div class="form-group">
-              <label for="gemini-custom-prompt-input">常に適用するプロンプト</label>
-              <textarea
-                id="gemini-custom-prompt-input"
-                class="save-input ai-textarea"
-                placeholder="例: 日本語で、箇条書き中心で、丁寧語で"
-              ></textarea>
-            </div>
-            <div class="ai-settings-actions">
-              <button class="btn-primary" id="save-gemini-custom-prompt-btn">保存</button>
-              <button class="btn-secondary" id="clear-gemini-custom-prompt-btn">クリア</button>
-            </div>
-            <p class="api-key-status" id="gemini-custom-prompt-status">未保存</p>
-          </div>
           <div class="form-group">
             <label for="ai-prompt-input">指示</label>
             <textarea

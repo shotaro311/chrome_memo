@@ -47,6 +47,14 @@ export interface QuickMemo {
   updatedAt: number;
 }
 
+/**
+ * YouTube字幕（タイムスタンプ付き）
+ */
+export interface TranscriptItem {
+  time: string;
+  text: string;
+}
+
 // ========================================
 // バックアップ（エクスポート/インポート）
 // ========================================
@@ -151,6 +159,8 @@ export enum MessageType {
 
   // AI
   GEMINI_GENERATE = 'GEMINI_GENERATE',
+  GET_YOUTUBE_TRANSCRIPT = 'GET_YOUTUBE_TRANSCRIPT',
+  FETCH_TRANSCRIPT_MAIN_WORLD = 'FETCH_TRANSCRIPT_MAIN_WORLD',
 
   // フォルダ操作
   CREATE_FOLDER = 'CREATE_FOLDER',
@@ -260,6 +270,22 @@ export interface GeminiGenerateMessage extends BaseMessage {
   type: MessageType.GEMINI_GENERATE;
   prompt: string;
   model?: string;
+}
+
+/**
+ * YouTube字幕取得メッセージ
+ */
+export interface GetYoutubeTranscriptMessage extends BaseMessage {
+  type: MessageType.GET_YOUTUBE_TRANSCRIPT;
+  videoId: string;
+}
+
+/**
+ * YouTube字幕取得メッセージ（MAINワールド経由）
+ */
+export interface FetchTranscriptMainWorldMessage extends BaseMessage {
+  type: MessageType.FETCH_TRANSCRIPT_MAIN_WORLD;
+  videoId: string;
 }
 
 /**
@@ -457,6 +483,8 @@ export type Message =
   | GetSettingsMessage
   | UpdateSettingsMessage
   | GeminiGenerateMessage
+  | GetYoutubeTranscriptMessage
+  | FetchTranscriptMainWorldMessage
   | UpdateQuickMemoMessage
   | CreateFolderMessage
   | DeleteFolderMessage
