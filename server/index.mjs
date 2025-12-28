@@ -5,9 +5,9 @@ import { Innertube } from 'youtubei.js';
 import ytdl from '@distube/ytdl-core';
 import { getSubtitles } from 'youtube-caption-extractor';
 
-const TRANSCRIPT_EXTRACTOR_TIMEOUT_MS = 6000;
-const TRANSCRIPT_FALLBACK_TIMEOUT_MS = 4000;
-const LANGUAGE_PREFERENCE = ['ja', 'ja-Hans', 'ja-Hant'];
+const TRANSCRIPT_EXTRACTOR_TIMEOUT_MS = 12000;
+const TRANSCRIPT_FALLBACK_TIMEOUT_MS = 12000;
+const LANGUAGE_PREFERENCE = ['ja', 'ja-Hans', 'ja-Hant', 'en', 'en-US', 'en-GB'];
 
 function jsonResponse(res, status, body) {
   const payload = JSON.stringify(body);
@@ -49,6 +49,10 @@ function withTimeout(promise, ms, message) {
       setTimeout(() => reject(new Error(message)), ms);
     }),
   ]);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function fetchTranscriptFromCaptionExtractor(videoId) {
@@ -110,7 +114,15 @@ async function fetchTranscriptFromYoutubei(url) {
     return segments;
   };
 
-  return withTimeout(fetchCore(), TRANSCRIPT_FALLBACK_TIMEOUT_MS, 'Transcript fallback fetch timed out');
+  try {
+    return await withTimeout(fetchCore(), TRANSCRIPT_FALLBACK_TIMEOUT_MS, 'Transcript fallback fetch timed out');
+  } catch (error) {
+    if (String(error?.message || '').includes('timed out')) {
+      await sleep(800);
+      return await withTimeout(fetchCore(), TRANSCRIPT_FALLBACK_TIMEOUT_MS, 'Transcript fallback fetch timed out');
+    }
+    throw error;
+  }
 }
 
 async function fetchTranscriptFast(url) {
