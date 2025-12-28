@@ -99,7 +99,7 @@ async function fetchTranscriptFromYoutubei(url) {
     const xml = await response.text();
 
     const segments = [];
-    const regex = /<text start="([0-9.]+)"[^>]*>([^<]+)<\\/text>/g;
+    const regex = /<text start="([0-9.]+)"[^>]*>([^<]+)<\/text>/g;
     let match;
     while ((match = regex.exec(xml)) !== null) {
       segments.push({
