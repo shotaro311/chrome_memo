@@ -291,7 +291,12 @@ async function fetchCaptionItemsFromBaseUrl(baseUrl: string, referrerUrl?: strin
   return [];
 }
 
-async function fetchCaptionTracksViaInnerTubePlayer(videoId: string, apiKey: string, clientVersion?: string) {
+async function fetchCaptionTracksViaInnerTubePlayer(
+  videoId: string,
+  apiKey: string,
+  clientVersion?: string,
+  options?: { credentials?: RequestCredentials; referrerUrl?: string },
+) {
   const endpoint = `https://www.youtube.com/youtubei/v1/player?key=${encodeURIComponent(apiKey)}`;
   const payload = {
     context: {
@@ -307,7 +312,8 @@ async function fetchCaptionTracksViaInnerTubePlayer(videoId: string, apiKey: str
 
   const response = await fetch(endpoint, {
     method: 'POST',
-    credentials: 'include',
+    credentials: options?.credentials ?? 'omit',
+    referrer: options?.referrerUrl,
     headers: {
       'Content-Type': 'application/json',
       'X-Youtube-Client-Name': '1',
@@ -349,7 +355,10 @@ async function fetchYoutubeTranscript(videoId: string) {
     }
 
     try {
-      tracks = await fetchCaptionTracksViaInnerTubePlayer(videoId, apiKey, clientVersion || undefined);
+      tracks = await fetchCaptionTracksViaInnerTubePlayer(videoId, apiKey, clientVersion || undefined, {
+        credentials: 'omit',
+        referrerUrl: watchUrl,
+      });
       console.log('[Background] tracks (InnerTube):', tracks ? `found ${tracks.length}` : 'not found');
     } catch (error) {
       console.warn('[Background] InnerTube player fallback failed:', error);
@@ -379,7 +388,10 @@ async function fetchYoutubeTranscript(videoId: string) {
 
   if (items.length === 0 && apiKey) {
     try {
-      const refreshedTracks = await fetchCaptionTracksViaInnerTubePlayer(videoId, apiKey, clientVersion || undefined);
+      const refreshedTracks = await fetchCaptionTracksViaInnerTubePlayer(videoId, apiKey, clientVersion || undefined, {
+        credentials: 'omit',
+        referrerUrl: watchUrl,
+      });
       if (refreshedTracks && refreshedTracks.length > 0) {
         const refreshedTrack =
           (preferredLanguageCode
