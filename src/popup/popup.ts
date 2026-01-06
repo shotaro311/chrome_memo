@@ -1,6 +1,5 @@
 import { MessageType, Folder, Note, INBOX_FOLDER_ID } from '../types';
 import { getAuthState } from '../lib/auth';
-import { fullSync } from '../lib/sync';
 
 // ========================================
 // グローバル変数
@@ -23,11 +22,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   try {
     // 認証状態をチェック
     await updateAuthUI();
-
-    const authState = await getAuthState();
-    if (authState.isAuthenticated) {
-      await fullSync();
-    }
 
     await loadData();
     render();
@@ -241,8 +235,11 @@ function setupEventListeners() {
   const signOutBtn = document.getElementById('sign-out-btn');
   signOutBtn?.addEventListener('click', handleSignOut);
 
-  const syncBtn = document.getElementById('sync-btn');
-  syncBtn?.addEventListener('click', handleSync);
+  const syncFromRemoteBtn = document.getElementById('sync-from-remote-btn');
+  syncFromRemoteBtn?.addEventListener('click', handleSyncFromRemote);
+
+  const syncToRemoteBtn = document.getElementById('sync-to-remote-btn');
+  syncToRemoteBtn?.addEventListener('click', handleSyncToRemote);
 
   // パネルを開くボタン
   const openPanelBtn = document.getElementById('open-panel-btn');
@@ -489,7 +486,6 @@ async function handleSignIn() {
       showAuthError(`サインインに失敗しました: ${response?.error || '不明なエラーが発生しました'}`);
     } else {
       await updateAuthUI();
-      await fullSync();
       await loadData();
       render();
     }
@@ -523,23 +519,76 @@ async function handleSignOut() {
   }
 }
 
-async function handleSync() {
-  const syncBtn = document.getElementById('sync-btn') as HTMLButtonElement;
-  syncBtn.disabled = true;
-  syncBtn.textContent = '同期中...';
+async function handleSyncFromRemote() {
+  const ok = confirm(
+    'リモートの内容でローカルを上書きします。未同期のローカルデータが失われる可能性があります。続行しますか？'
+  );
+  if (!ok) return;
 
-  const result = await fullSync();
-
-  if (result.success) {
-    await loadData();
-    render();
-    alert('同期が完了しました');
-  } else {
-    alert(`同期に失敗しました: ${result.error}`);
+  const syncFromBtn = document.getElementById('sync-from-remote-btn') as HTMLButtonElement;
+  const syncToBtn = document.getElementById('sync-to-remote-btn') as HTMLButtonElement | null;
+  const prevText = syncFromBtn?.textContent;
+  if (syncFromBtn) {
+    syncFromBtn.disabled = true;
+    syncFromBtn.textContent = '同期中...';
+  }
+  if (syncToBtn) {
+    syncToBtn.disabled = true;
   }
 
-  syncBtn.disabled = false;
-  syncBtn.textContent = '今すぐ同期';
+  const result = await chrome.runtime.sendMessage({ type: MessageType.AUTH_SYNC_FROM_REMOTE });
+
+  if (result?.success) {
+    await loadData();
+    render();
+    alert('リモート→ローカルの同期が完了しました');
+  } else {
+    alert(`同期に失敗しました: ${result?.error || '不明なエラーが発生しました'}`);
+  }
+
+  if (syncFromBtn) {
+    syncFromBtn.disabled = false;
+    syncFromBtn.textContent = prevText || 'リモート→ローカル';
+  }
+  if (syncToBtn) {
+    syncToBtn.disabled = false;
+  }
+}
+
+async function handleSyncToRemote() {
+  const ok = confirm(
+    'ローカルの内容でリモートを上書きします。リモートのデータが失われる可能性があります。続行しますか？'
+  );
+  if (!ok) return;
+
+  const syncToBtn = document.getElementById('sync-to-remote-btn') as HTMLButtonElement;
+  const syncFromBtn = document.getElementById('sync-from-remote-btn') as HTMLButtonElement | null;
+  const prevText = syncToBtn?.textContent;
+  if (syncToBtn) {
+    syncToBtn.disabled = true;
+    syncToBtn.textContent = '同期中...';
+  }
+  if (syncFromBtn) {
+    syncFromBtn.disabled = true;
+  }
+
+  const result = await chrome.runtime.sendMessage({ type: MessageType.AUTH_SYNC_TO_REMOTE });
+
+  if (result?.success) {
+    await loadData();
+    render();
+    alert('ローカル→リモートの同期が完了しました');
+  } else {
+    alert(`同期に失敗しました: ${result?.error || '不明なエラーが発生しました'}`);
+  }
+
+  if (syncToBtn) {
+    syncToBtn.disabled = false;
+    syncToBtn.textContent = prevText || 'ローカル→リモート';
+  }
+  if (syncFromBtn) {
+    syncFromBtn.disabled = false;
+  }
 }
 
 // ========================================

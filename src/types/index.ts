@@ -81,15 +81,15 @@ export type BackupFile = BackupFileV1;
 export interface LocalStorageData {
   notes: Record<string, Note>; // noteId -> Note
   quickMemo: QuickMemo;
+  noteMetadata: Record<string, NoteMetadata>; // noteId -> NoteMetadata
 }
 
 /**
- * chrome.storage.sync に保存するデータ（設定・構造・メタデータのみ）
+ * chrome.storage.sync に保存するデータ（設定・構造のみ）
  */
 export interface SyncStorageData {
   folders: Record<string, Folder>; // folderId -> Folder
   folderOrder?: string[]; // 並び順（Inbox除外）
-  noteMetadata: Record<string, NoteMetadata>; // noteId -> NoteMetadata
   settings: AppSettings;
 }
 
@@ -142,6 +142,8 @@ export enum MessageType {
   AUTH_SIGN_OUT = 'AUTH_SIGN_OUT',
   AUTH_GET_STATE = 'AUTH_GET_STATE',
   AUTH_SYNC_NOW = 'AUTH_SYNC_NOW',
+  AUTH_SYNC_FROM_REMOTE = 'AUTH_SYNC_FROM_REMOTE',
+  AUTH_SYNC_TO_REMOTE = 'AUTH_SYNC_TO_REMOTE',
 
   // 設定
   GET_SETTINGS = 'GET_SETTINGS',
@@ -236,6 +238,20 @@ export interface AuthGetStateMessage extends BaseMessage {
  */
 export interface AuthSyncNowMessage extends BaseMessage {
   type: MessageType.AUTH_SYNC_NOW;
+}
+
+/**
+ * リモート → ローカル 同期メッセージ
+ */
+export interface AuthSyncFromRemoteMessage extends BaseMessage {
+  type: MessageType.AUTH_SYNC_FROM_REMOTE;
+}
+
+/**
+ * ローカル → リモート 同期メッセージ
+ */
+export interface AuthSyncToRemoteMessage extends BaseMessage {
+  type: MessageType.AUTH_SYNC_TO_REMOTE;
 }
 
 /**
@@ -454,6 +470,8 @@ export type Message =
   | AuthSignOutMessage
   | AuthGetStateMessage
   | AuthSyncNowMessage
+  | AuthSyncFromRemoteMessage
+  | AuthSyncToRemoteMessage
   | GetSettingsMessage
   | UpdateSettingsMessage
   | GeminiGenerateMessage

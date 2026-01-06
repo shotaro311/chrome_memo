@@ -73,7 +73,8 @@ const actions = createPanelActions(
   {
     view,
     getTextarea: (pane) => getTextarea(panel, pane),
-    escapeHtml
+    escapeHtml,
+    copyToClipboard
   }
 );
 
@@ -111,9 +112,79 @@ async function updateSettings(updates: Partial<AppSettings>) {
   }
 }
 
+let copyToastTimer: number | null = null;
+
+function showCopyToast(message: string = 'copied') {
+  if (!panel) return;
+  let toast = panel.querySelector('.copy-toast') as HTMLElement | null;
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.className = 'copy-toast';
+    panel.appendChild(toast);
+  }
+
+  toast.textContent = message;
+  toast.classList.remove('show');
+  void toast.offsetWidth;
+  toast.classList.add('show');
+
+  if (copyToastTimer) {
+    window.clearTimeout(copyToastTimer);
+  }
+  copyToastTimer = window.setTimeout(() => {
+    toast?.classList.remove('show');
+  }, 1200);
+}
+
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      showCopyToast();
+      return true;
+    }
+  } catch {
+    // fallback
+  }
+
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.top = '-1000px';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    const ok = document.execCommand('copy');
+    textarea.remove();
+    if (ok) {
+      showCopyToast();
+    }
+    return ok;
+  } catch (error) {
+    console.warn('[Content] Copy failed:', error);
+    return false;
+  }
+}
+
 function applyMemoFontSize(fontSize: number) {
   if (!panel) return;
   panel.style.setProperty('--memo-font-size', `${fontSize}px`);
+}
+
+async function handleCopyCurrentMemo() {
+  const focusedTabId = view.getPaneTabId(panelState.lastFocusedPane);
+  const tabId = focusedTabId || panelState.activeTabId || panelState.openTabs[0] || null;
+  if (!tabId) {
+    alert('コピーできるメモがありません');
+    return;
+  }
+  const content = view.getTabContent(tabId);
+  const ok = await copyToClipboard(content || '');
+  if (!ok) {
+    alert('コピーに失敗しました');
+  }
 }
 
 function clampPanelSize(width: number, height: number) {
@@ -318,8 +389,11 @@ function setupEventListeners() {
       case 'auth-sign-in-btn':
         void actions.handleAuthSignIn();
         break;
-      case 'auth-sync-now-btn':
-        void actions.handleAuthSyncNow();
+      case 'auth-sync-from-remote-btn':
+        void actions.handleAuthSyncFromRemote();
+        break;
+      case 'auth-sync-to-remote-btn':
+        void actions.handleAuthSyncToRemote();
         break;
       case 'auth-sign-out-btn':
         void actions.handleAuthSignOut();
@@ -335,6 +409,9 @@ function setupEventListeners() {
         break;
       case 'clear-gemini-custom-prompt-btn':
         void handleClearGeminiCustomPrompt();
+        break;
+      case 'copy-current-btn':
+        void handleCopyCurrentMemo();
         break;
 	      case 'export-data-btn':
 	        void handleExportData();
@@ -876,11 +953,16 @@ function handleTogglePanelSize() {
 
 	async function handleExportData() {
 	  try {
-	    const response = await chrome.runtime.sendMessage({
-	      type: MessageType.GET_EXPORT_DATA
+    const response = await chrome.runtime.sendMessage({
+      type: MessageType.GET_EXPORT_DATA
     });
-    if (!response.success) {
-      alert(`エクスポートに失敗しました: ${response.error}`);
+    if (!response?.success) {
+      const rawError = response?.error;
+      const errorMessage =
+        typeof rawError === 'string' && rawError.trim().length > 0
+          ? rawError
+          : '不明なエラー';
+      alert(`エクスポートに失敗しました: ${errorMessage}`);
       return;
     }
 

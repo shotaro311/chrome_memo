@@ -22,11 +22,12 @@ export interface PanelActionsDeps {
   view: View;
   getTextarea: (pane: Pane) => HTMLTextAreaElement | null;
   escapeHtml: (text: string) => string;
+  copyToClipboard: (text: string) => Promise<boolean>;
 }
 
 export function createPanelActions(state: PanelActionsState, deps: PanelActionsDeps) {
   const { getPanel, panelState, folders, draftMemo, tabInfoMap, tabContentCache, tabUnsavedMap, timers } = state;
-  const { view, getTextarea, escapeHtml } = deps;
+  const { view, getTextarea, escapeHtml, copyToClipboard } = deps;
   let folderHoverTimer: number | null = null;
   let lastHoverFolderId: string | null = null;
   let folderContextMenuFolderId: string | null = null;
@@ -530,6 +531,26 @@ export function createPanelActions(state: PanelActionsState, deps: PanelActionsD
     }
   }
 
+  function resetTabsAfterRemoteSync() {
+    panelState.openTabs.length = 0;
+    panelState.activeTabId = null;
+    panelState.rightTabId = null;
+    panelState.splitEnabled = false;
+    panelState.lastFocusedPane = 'left';
+
+    Object.keys(tabInfoMap).forEach((key) => {
+      delete tabInfoMap[key];
+    });
+    Object.keys(tabContentCache).forEach((key) => {
+      delete tabContentCache[key];
+    });
+    Object.keys(tabUnsavedMap).forEach((key) => {
+      delete tabUnsavedMap[key];
+    });
+
+    view.openDraftTab();
+  }
+
   function closeSplitModal() {
     const panel = getPanel();
     const modal = panel?.querySelector('#split-modal') as HTMLElement | null;
@@ -635,11 +656,6 @@ export function createPanelActions(state: PanelActionsState, deps: PanelActionsD
         return;
       }
 
-      const syncResponse = await chrome.runtime.sendMessage({ type: MessageType.AUTH_SYNC_NOW });
-      if (!syncResponse?.success) {
-        showAuthModalError(syncResponse?.error || '同期に失敗しました');
-      }
-
       await loadData();
       view.renderAll();
 
@@ -659,18 +675,71 @@ export function createPanelActions(state: PanelActionsState, deps: PanelActionsD
     }
   }
 
-  async function handleAuthSyncNow() {
+  async function handleAuthSyncFromRemote() {
+    const ok = confirm(
+      'リモートの内容でローカルを上書きします。未同期のローカルデータが失われる可能性があります。続行しますか？'
+    );
+    if (!ok) return;
+
     const panel = getPanel();
-    const btn = panel?.querySelector('#auth-sync-now-btn') as HTMLButtonElement | null;
-    const prevText = btn?.textContent;
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = '同期中...';
+    const fromBtn = panel?.querySelector('#auth-sync-from-remote-btn') as HTMLButtonElement | null;
+    const toBtn = panel?.querySelector('#auth-sync-to-remote-btn') as HTMLButtonElement | null;
+    const prevFromText = fromBtn?.textContent;
+    if (fromBtn) {
+      fromBtn.disabled = true;
+      fromBtn.textContent = '同期中...';
+    }
+    if (toBtn) {
+      toBtn.disabled = true;
     }
     hideAuthModalError();
 
     try {
-      const response = await chrome.runtime.sendMessage({ type: MessageType.AUTH_SYNC_NOW });
+      const response = await chrome.runtime.sendMessage({ type: MessageType.AUTH_SYNC_FROM_REMOTE });
+      if (!response?.success) {
+        showAuthModalError(response?.error || '同期に失敗しました');
+        return;
+      }
+
+      await loadData();
+      resetTabsAfterRemoteSync();
+      view.renderAll();
+      alert('リモート→ローカルの同期が完了しました');
+    } catch (error) {
+      console.error('[Content] Sync from remote failed:', error);
+      showAuthModalError(String(error));
+    } finally {
+      if (fromBtn) {
+        fromBtn.disabled = false;
+        fromBtn.textContent = prevFromText || 'リモート→ローカル';
+      }
+      if (toBtn) {
+        toBtn.disabled = false;
+      }
+    }
+  }
+
+  async function handleAuthSyncToRemote() {
+    const ok = confirm(
+      'ローカルの内容でリモートを上書きします。リモートのデータが失われる可能性があります。続行しますか？'
+    );
+    if (!ok) return;
+
+    const panel = getPanel();
+    const fromBtn = panel?.querySelector('#auth-sync-from-remote-btn') as HTMLButtonElement | null;
+    const toBtn = panel?.querySelector('#auth-sync-to-remote-btn') as HTMLButtonElement | null;
+    const prevToText = toBtn?.textContent;
+    if (toBtn) {
+      toBtn.disabled = true;
+      toBtn.textContent = '同期中...';
+    }
+    if (fromBtn) {
+      fromBtn.disabled = true;
+    }
+    hideAuthModalError();
+
+    try {
+      const response = await chrome.runtime.sendMessage({ type: MessageType.AUTH_SYNC_TO_REMOTE });
       if (!response?.success) {
         showAuthModalError(response?.error || '同期に失敗しました');
         return;
@@ -678,14 +747,17 @@ export function createPanelActions(state: PanelActionsState, deps: PanelActionsD
 
       await loadData();
       view.renderAll();
-      alert('同期が完了しました');
+      alert('ローカル→リモートの同期が完了しました');
     } catch (error) {
-      console.error('[Content] Sync failed:', error);
+      console.error('[Content] Sync to remote failed:', error);
       showAuthModalError(String(error));
     } finally {
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = prevText || '今すぐ同期';
+      if (toBtn) {
+        toBtn.disabled = false;
+        toBtn.textContent = prevToText || 'ローカル→リモート';
+      }
+      if (fromBtn) {
+        fromBtn.disabled = false;
       }
     }
   }
@@ -948,6 +1020,7 @@ export function createPanelActions(state: PanelActionsState, deps: PanelActionsD
               <div class="file-item-preview">${escapeHtml(note.content.substring(0, 50))}${note.content.length > 50 ? '...' : ''}</div>
             </div>
             <div class="file-item-actions">
+              <button class="file-action-btn copy-btn" data-note-id="${note.id}" title="コピー">📋</button>
               <button class="file-action-btn move-btn" data-note-id="${note.id}" title="移動">📁</button>
               <button class="file-action-btn edit-btn" data-note-id="${note.id}" title="名前を変更">✏️</button>
               <button class="file-action-btn delete-btn" data-note-id="${note.id}" title="削除">🗑️</button>
@@ -983,6 +1056,20 @@ export function createPanelActions(state: PanelActionsState, deps: PanelActionsD
               const noteId = (e.currentTarget as HTMLElement).getAttribute('data-note-id');
               if (noteId) {
                 void openMoveNoteModal(noteId, folderId);
+              }
+            });
+          });
+
+          fileList.querySelectorAll('.copy-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+              e.stopPropagation();
+              const noteId = (e.currentTarget as HTMLElement).getAttribute('data-note-id');
+              if (!noteId) return;
+              const note = folderNotes.find(item => item.id === noteId);
+              if (!note) return;
+              const ok = await copyToClipboard(note.content || '');
+              if (!ok) {
+                alert('コピーに失敗しました');
               }
             });
           });
@@ -1204,7 +1291,8 @@ export function createPanelActions(state: PanelActionsState, deps: PanelActionsD
     flushDraftSave,
     handleAuthSignIn,
     handleAuthSignOut,
-    handleAuthSyncNow,
+    handleAuthSyncFromRemote,
+    handleAuthSyncToRemote,
     handleConfirmSave,
     handleConfirmMoveNote,
     handleDeleteNote,

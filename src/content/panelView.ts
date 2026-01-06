@@ -115,13 +115,8 @@ export function createPanelView(state: PanelViewState, deps: PanelViewDeps) {
     const panel = getPanel();
     if (!panel) return;
 
-    const titleElement = panel.querySelector('#memo-title') as HTMLElement | null;
     const currentLabel = panel.querySelector('#memo-current-label') as HTMLElement | null;
     const saveBtn = panel.querySelector('#save-btn') as HTMLButtonElement | null;
-
-    if (titleElement) {
-      titleElement.textContent = 'メモ';
-    }
 
     const leftTabId = panelState.activeTabId;
     const rightTabId = panelState.splitEnabled ? panelState.rightTabId : null;

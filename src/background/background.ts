@@ -35,7 +35,16 @@ import {
   updateSettings
 } from '../utils/storage';
 import { getAuthState, onAuthStateChange, signInWithGoogle, signOut } from '../lib/auth';
-import { deleteFolder as deleteFolderSync, deleteMemo, fullSync, uploadFolder, uploadMemo, uploadQuickMemo } from '../lib/sync';
+import {
+  deleteFolder as deleteFolderSync,
+  deleteMemo,
+  downloadOnlySync,
+  fullSync,
+  uploadFolder,
+  uploadMemo,
+  uploadOnlySync,
+  uploadQuickMemo
+} from '../lib/sync';
 import { chromeStorage } from '../lib/chromeStorage';
 import { generateGeminiText } from '../lib/gemini';
 import {
@@ -109,17 +118,8 @@ chrome.runtime.onInstalled.addListener(async () => {
 // ========================================
 
 // 認証状態の変更を監視
-onAuthStateChange(async (state) => {
+onAuthStateChange((state) => {
   console.log('[Background] Auth state changed:', state);
-  if (state.isAuthenticated) {
-    console.log('[Background] Auto-syncing...');
-    const result = await fullSync();
-    if (result.success) {
-      console.log('[Background] Auto-sync completed');
-    } else {
-      console.error('[Background] Auto-sync failed:', result.error);
-    }
-  }
 });
 
 // ========================================
@@ -252,6 +252,22 @@ async function handleMessage(message: Message): Promise<Response> {
 
       case MessageType.AUTH_SYNC_NOW: {
         const result = await fullSync();
+        if (!result.success) {
+          return { success: false, error: result.error || '同期に失敗しました' };
+        }
+        return { success: true, data: null };
+      }
+
+      case MessageType.AUTH_SYNC_FROM_REMOTE: {
+        const result = await downloadOnlySync();
+        if (!result.success) {
+          return { success: false, error: result.error || '同期に失敗しました' };
+        }
+        return { success: true, data: null };
+      }
+
+      case MessageType.AUTH_SYNC_TO_REMOTE: {
+        const result = await uploadOnlySync();
         if (!result.success) {
           return { success: false, error: result.error || '同期に失敗しました' };
         }
@@ -562,24 +578,26 @@ async function handleGetExportData(): Promise<Response<BackupFile>> {
   if (notesWithThumbnail.length > 0) {
     const authState = await getAuthState();
     if (!authState.isAuthenticated) {
-      return { success: false, error: 'サムネイルを含めてエクスポートするにはサインインが必要です' };
-    }
+      console.warn('[Export] Not authenticated. Exporting without thumbnails.');
+    } else {
+      thumbnailsByNoteId = {};
 
-    thumbnailsByNoteId = {};
+      for (const note of notesWithThumbnail) {
+        const result = await downloadThumbnailWebp({ path: note.thumbnailPath as string });
+        if (!result.success) {
+          console.warn('[Export] Skip thumbnail export:', { noteId: note.id, error: result.error });
+          continue;
+        }
 
-    for (const note of notesWithThumbnail) {
-      const result = await downloadThumbnailWebp({ path: note.thumbnailPath as string });
-      if (!result.success) {
-        return {
-          success: false,
-          error: result.error === 'Not authenticated' ? 'サインインが必要です' : (result.error ?? 'サムネイルの取得に失敗しました')
+        thumbnailsByNoteId[note.id] = {
+          mimeType: 'image/webp',
+          base64: arrayBufferToBase64(result.buffer)
         };
       }
 
-      thumbnailsByNoteId[note.id] = {
-        mimeType: 'image/webp',
-        base64: arrayBufferToBase64(result.buffer)
-      };
+      if (Object.keys(thumbnailsByNoteId).length === 0) {
+        thumbnailsByNoteId = undefined;
+      }
     }
   }
 
@@ -695,13 +713,13 @@ async function handleImportBackupData(
   const backup = validated.backup;
 
   const [syncData, localData] = await Promise.all([
-    chrome.storage.sync.get(['folders', 'folderOrder', 'noteMetadata', 'settings']),
-    chrome.storage.local.get(['notes', 'quickMemo'])
+    chrome.storage.sync.get(['folders', 'folderOrder', 'settings']),
+    chrome.storage.local.get(['notes', 'quickMemo', 'noteMetadata'])
   ]);
 
   const existingFolderMap = (syncData.folders || {}) as Record<string, Folder>;
   const existingNotesMap = (localData.notes || {}) as Record<string, Note>;
-  const existingMetadataMap = (syncData.noteMetadata || {}) as Record<string, NoteMetadata>;
+  const existingMetadataMap = (localData.noteMetadata || {}) as Record<string, NoteMetadata>;
 
   const existingFolderIdByName = new Map<string, string>();
   for (const folder of Object.values(existingFolderMap)) {
@@ -899,12 +917,12 @@ async function handleImportBackupData(
   await Promise.all([
     chrome.storage.sync.set({
       folders: mergedFolderMap,
-      noteMetadata: { ...existingMetadataMap, ...metadataToAdd },
       ...(nextFolderOrder ? { folderOrder: nextFolderOrder } : {}),
       settings: backup.settings
     }),
     chrome.storage.local.set({
       notes: { ...existingNotesMap, ...notesToAdd },
+      noteMetadata: { ...existingMetadataMap, ...metadataToAdd },
       quickMemo: backup.quickMemo
     })
   ]);

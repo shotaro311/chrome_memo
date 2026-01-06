@@ -4,7 +4,7 @@ export function getPanelHtml(): string {
   return `
     <div class="panel-header">
       <div class="header-left">
-        <h2 id="memo-title">メモ</h2>
+        <button class="header-btn" id="copy-current-btn" title="メモをコピー">📋</button>
         <button class="header-btn" id="save-as-btn" title="名前を付けて保存">💾</button>
         <button class="header-btn" id="save-btn" title="上書き保存" style="display: none;">📥</button>
         <button class="header-btn" id="open-file-btn" title="ファイルを開く">📂</button>
@@ -133,7 +133,8 @@ export function getPanelHtml(): string {
           <div id="auth-modal-signed-in" style="display: none;">
             <p>サインイン中: <span id="auth-user-email"></span></p>
             <div class="auth-actions">
-              <button class="btn-secondary" id="auth-sync-now-btn">今すぐ同期</button>
+              <button class="btn-secondary" id="auth-sync-from-remote-btn">リモート→ローカル</button>
+              <button class="btn-secondary" id="auth-sync-to-remote-btn">ローカル→リモート</button>
               <button class="btn-secondary" id="auth-sign-out-btn">サインアウト</button>
             </div>
           </div>

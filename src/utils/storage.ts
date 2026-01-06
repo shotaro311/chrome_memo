@@ -77,15 +77,16 @@ export async function initializeStorage(): Promise<void> {
   }
 
   // Localストレージの初期化
-  if (!localData.notes) {
+  if (!localData.notes || !localData.noteMetadata) {
     const defaultQuickMemo: QuickMemo = {
       content: '',
       updatedAt: Date.now()
     };
 
     await chrome.storage.local.set({
-      notes: {},
-      quickMemo: defaultQuickMemo
+      notes: localData.notes || {},
+      quickMemo: localData.quickMemo || defaultQuickMemo,
+      noteMetadata: localData.noteMetadata || {}
     });
   }
 }
@@ -363,7 +364,7 @@ export async function createNote(
   const updatedNotes = { ...notes, [newNote.id]: newNote };
   await setLocalValue('notes', updatedNotes);
 
-  // Syncストレージにメタデータを保存
+  // Localストレージにメタデータを保存
   const metadata: NoteMetadata = {
     id: newNote.id,
     folderId: newNote.folderId,
@@ -373,9 +374,9 @@ export async function createNote(
     updatedAt: newNote.updatedAt,
     lastOpenedAt: newNote.lastOpenedAt
   };
-  const noteMetadata = (await getSyncValue('noteMetadata')) || {};
+  const noteMetadata = (await getLocalValue('noteMetadata')) || {};
   const updatedMetadata = { ...noteMetadata, [metadata.id]: metadata };
-  await setSyncValue('noteMetadata', updatedMetadata);
+  await setLocalValue('noteMetadata', updatedMetadata);
 
   return newNote;
 }
@@ -452,7 +453,7 @@ export async function updateNote(
   const updatedNotes = { ...notes, [noteId]: note };
   await setLocalValue('notes', updatedNotes);
 
-  // Syncストレージのメタデータを更新
+  // Localストレージのメタデータを更新
   const metadata: NoteMetadata = {
     id: note.id,
     folderId: note.folderId,
@@ -462,9 +463,9 @@ export async function updateNote(
     updatedAt: note.updatedAt,
     lastOpenedAt: note.lastOpenedAt
   };
-  const noteMetadata = (await getSyncValue('noteMetadata')) || {};
+  const noteMetadata = (await getLocalValue('noteMetadata')) || {};
   const updatedMetadata = { ...noteMetadata, [metadata.id]: metadata };
-  await setSyncValue('noteMetadata', updatedMetadata);
+  await setLocalValue('noteMetadata', updatedMetadata);
 
   return note;
 }
@@ -479,11 +480,11 @@ export async function deleteNote(noteId: string): Promise<void> {
   delete updatedNotes[noteId];
   await setLocalValue('notes', updatedNotes);
 
-  // Syncストレージのメタデータから削除
-  const noteMetadata = (await getSyncValue('noteMetadata')) || {};
+  // Localストレージのメタデータから削除
+  const noteMetadata = (await getLocalValue('noteMetadata')) || {};
   const updatedMetadata = { ...noteMetadata };
   delete updatedMetadata[noteId];
-  await setSyncValue('noteMetadata', updatedMetadata);
+  await setLocalValue('noteMetadata', updatedMetadata);
 }
 
 /**
@@ -502,13 +503,13 @@ export async function markNoteAsOpened(noteId: string): Promise<void> {
   const updatedNotes = { ...notes, [noteId]: note };
   await setLocalValue('notes', updatedNotes);
 
-  // Syncストレージのメタデータを更新
-  const noteMetadata = (await getSyncValue('noteMetadata')) || {};
+  // Localストレージのメタデータを更新
+  const noteMetadata = (await getLocalValue('noteMetadata')) || {};
   const metadata = noteMetadata[noteId];
   if (metadata) {
     metadata.lastOpenedAt = note.lastOpenedAt;
     const updatedMetadata = { ...noteMetadata, [noteId]: metadata };
-    await setSyncValue('noteMetadata', updatedMetadata);
+    await setLocalValue('noteMetadata', updatedMetadata);
   }
 }
 
