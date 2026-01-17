@@ -56,6 +56,28 @@ import {
   DEFAULT_THUMBNAIL_SIGNED_URL_EXPIRES_SEC
 } from '../lib/thumbnail';
 
+function isIgnorableFetchRejection(reason: unknown): boolean {
+  if (reason instanceof TypeError && reason.message === 'Failed to fetch') {
+    return true;
+  }
+
+  if (typeof reason === 'object' && reason !== null) {
+    const { name, message } = reason as { name?: unknown; message?: unknown };
+    if (name === 'AuthRetryableFetchError' && message === 'Failed to fetch') {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// Supabase の自動リフレッシュ等で一時的な通信失敗が unhandled rejection として上がることがあるため抑制する
+globalThis.addEventListener('unhandledrejection', (event) => {
+  if (!isIgnorableFetchRejection(event.reason)) return;
+  console.warn('[Background] Ignored unhandled rejection:', event.reason);
+  event.preventDefault();
+});
+
 function base64ToArrayBuffer(base64: string) {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);

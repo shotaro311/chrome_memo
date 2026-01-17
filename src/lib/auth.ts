@@ -1,6 +1,9 @@
 import { supabase } from './supabase';
 
 function formatSignInErrorMessage(message: string): string {
+  if (message.includes('Failed to fetch')) {
+    return 'Supabaseへの接続に失敗しました。ネットワーク・広告ブロッカー・Supabaseの設定（URL/認証）を確認してから再試行してください。';
+  }
   if (message.includes('missing OAuth secret')) {
     return 'Supabase側でGoogle OAuthのClient Secretが未設定です。Supabase Dashboard → Authentication → Providers → Google で Client ID / Client Secret を設定してください。';
   }
@@ -140,7 +143,8 @@ export async function signInWithGoogle(): Promise<{ success: boolean; error?: st
     return { success: true };
   } catch (error) {
     console.error('[Auth] Sign in exception:', error);
-    return { success: false, error: String(error) };
+    const message = error instanceof Error ? error.message : String(error);
+    return { success: false, error: formatSignInErrorMessage(message) };
   }
 }
 
@@ -159,7 +163,8 @@ export async function signOut(): Promise<{ success: boolean; error?: string }> {
     return { success: true };
   } catch (error) {
     console.error('[Auth] Sign out exception:', error);
-    return { success: false, error: String(error) };
+    const message = error instanceof Error ? error.message : String(error);
+    return { success: false, error: message };
   }
 }
 

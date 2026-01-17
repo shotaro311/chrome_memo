@@ -4,11 +4,14 @@ import { chromeStorage } from './chromeStorage';
 const SUPABASE_URL = 'https://jxlnqtueltmmmzbjviwh.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp4bG5xdHVlbHRtbW16Ymp2aXdoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU4MDQ3NDgsImV4cCI6MjA4MTM4MDc0OH0.oV6xtrRs4nXew16Y-758HR35Vub9tgzLvz02ztFQiIM';
 
+const IS_SERVICE_WORKER = typeof window === 'undefined';
+
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
+    // MV3 service worker ではセッションの自動リフレッシュが unhandled rejection として出ることがあるため抑制する
+    autoRefreshToken: !IS_SERVICE_WORKER,
+    detectSessionInUrl: false,
     flowType: 'pkce',
     storage: chromeStorage
   }
