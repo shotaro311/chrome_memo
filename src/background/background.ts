@@ -9,6 +9,7 @@ import {
   type Note,
   type NoteMetadata,
   type QuickMemo,
+  type TranscriptItem,
   Message,
   Response
 } from '../types';
@@ -127,6 +128,789 @@ function normalizeThumbnailData(data: unknown) {
 }
 
 // ========================================
+// YouTube字幕取得（hand-off準拠）
+// ========================================
+
+const YOUTUBE_TRANSCRIPT_LANG_PRIORITY = ['ja', 'ja-Hans', 'ja-Hant'];
+
+function extractJsonObjectFromHtml(html: string, token: string) {
+  const tokenIndex = html.indexOf(token);
+  if (tokenIndex === -1) return null;
+  const startIndex = html.indexOf('{', tokenIndex);
+  if (startIndex === -1) return null;
+  const jsonText = sliceJsonObject(html, startIndex);
+  if (!jsonText) return null;
+  try {
+    return JSON.parse(jsonText);
+  } catch (error) {
+    console.error('[Background] Failed to parse JSON:', error);
+    return null;
+  }
+}
+
+function sliceJsonObject(text: string, startIndex: number) {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = startIndex; i < text.length; i += 1) {
+    const ch = text[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === '{') {
+      depth += 1;
+      continue;
+    }
+    if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return text.slice(startIndex, i + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
+function decodeHtmlEntities(text: string) {
+  return text
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, code) => String.fromCharCode(parseInt(code, 16)));
+}
+
+function formatTranscriptTime(seconds: number) {
+  const total = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return hours > 0 ? `${pad(hours)}:${pad(minutes)}:${pad(secs)}` : `${pad(minutes)}:${pad(secs)}`;
+}
+
+function parseTranscriptXml(xml: string): TranscriptItem[] {
+  const items: TranscriptItem[] = [];
+  const normalized = xml.replace(/<br\s*\/?>/gi, '\n');
+  const regex = /<text[^>]*start="([\d.]+)"[^>]*>([\s\S]*?)<\/text>/g;
+  let match: RegExpExecArray | null = null;
+
+  while ((match = regex.exec(normalized)) !== null) {
+    const start = Number(match[1]);
+    if (!Number.isFinite(start)) continue;
+    const rawText = decodeHtmlEntities(match[2] ?? '');
+    const cleaned = rawText.replace(/\s+/g, ' ').trim();
+    if (!cleaned) continue;
+    items.push({ time: formatTranscriptTime(start), text: cleaned });
+  }
+
+  return items;
+}
+
+function parseTranscriptJson3(jsonText: string): TranscriptItem[] {
+  try {
+    const data = JSON.parse(jsonText);
+    const events = data?.events;
+    if (!Array.isArray(events)) return [];
+
+    const items: TranscriptItem[] = [];
+    for (const event of events) {
+      const startMs = Number(event?.tStartMs ?? 0);
+      if (!Number.isFinite(startMs)) continue;
+      const segs = event?.segs;
+      if (!Array.isArray(segs)) continue;
+
+      const text = segs.map((seg: { utf8?: string }) => seg.utf8 ?? '').join('');
+      const cleaned = text.replace(/\s+/g, ' ').trim();
+      if (!cleaned || cleaned === '\n') continue;
+      items.push({ time: formatTranscriptTime(startMs / 1000), text: cleaned });
+    }
+
+    return items;
+  } catch {
+    return [];
+  }
+}
+
+function selectCaptionTrack(tracks: Array<{ languageCode?: string; baseUrl?: string }>) {
+  for (const lang of YOUTUBE_TRANSCRIPT_LANG_PRIORITY) {
+    const found = tracks.find((track) => track.languageCode === lang);
+    if (found) return found;
+  }
+  return tracks[0] ?? null;
+}
+
+function withSearchParam(url: string, key: string, value: string) {
+  try {
+    const target = new URL(url);
+    target.searchParams.set(key, value);
+    return target.toString();
+  } catch {
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
+  }
+}
+
+function extractInnertubeApiKey(html: string) {
+  return html.match(/"INNERTUBE_API_KEY":"([^"]+)"/)?.[1] ?? null;
+}
+
+function extractInnertubeClientVersion(html: string) {
+  return (
+    html.match(/"INNERTUBE_CONTEXT_CLIENT_VERSION":"([^"]+)"/)?.[1] ??
+    html.match(/"INNERTUBE_CLIENT_VERSION":"([^"]+)"/)?.[1] ??
+    null
+  );
+}
+
+function extractCaptionTracksFromPlayerResponse(playerResponse: any) {
+  const tracks = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+  return Array.isArray(tracks) ? tracks : null;
+}
+
+async function fetchCaptionItemsFromBaseUrl(baseUrl: string, referrerUrl?: string) {
+  const candidates = [
+    { label: 'json3', url: withSearchParam(baseUrl, 'fmt', 'json3') },
+    { label: 'srv3', url: withSearchParam(baseUrl, 'fmt', 'srv3') },
+  ];
+
+  for (const candidate of candidates) {
+    const response = await fetch(candidate.url, {
+      cache: 'no-store',
+      credentials: 'include',
+      referrer: referrerUrl,
+    });
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!response.ok) {
+      console.warn('[Background] Caption fetch failed:', candidate.label, response.status);
+      continue;
+    }
+
+    const text = await response.text();
+    if (!text.trim()) {
+      console.warn('[Background] Caption fetch empty:', candidate.label, contentType);
+      continue;
+    }
+
+    const items = text.trim().startsWith('{') ? parseTranscriptJson3(text) : parseTranscriptXml(text);
+    if (items.length > 0) return items;
+    console.warn('[Background] Caption parsed empty:', candidate.label, contentType);
+  }
+
+  return [];
+}
+
+async function fetchCaptionTracksViaInnerTubePlayer(
+  videoId: string,
+  apiKey: string,
+  clientVersion?: string,
+  options?: { credentials?: RequestCredentials; referrerUrl?: string },
+) {
+  const endpoint = `https://www.youtube.com/youtubei/v1/player?key=${encodeURIComponent(apiKey)}`;
+  const payload = {
+    context: {
+      client: {
+        clientName: 'WEB',
+        clientVersion: clientVersion || '2.20241201.00.00',
+        hl: 'ja',
+        gl: 'JP',
+      },
+    },
+    videoId,
+  };
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    credentials: options?.credentials ?? 'omit',
+    referrer: options?.referrerUrl,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Youtube-Client-Name': '1',
+      'X-Youtube-Client-Version': payload.context.client.clientVersion,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(`InnerTube player failed (HTTP ${response.status})`);
+  }
+
+  const data = await response.json();
+  return extractCaptionTracksFromPlayerResponse(data);
+}
+
+async function fetchYoutubeTranscript(videoId: string) {
+  console.log('[Background] Fetching transcript for video:', videoId);
+  const watchUrl = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
+  const response = await fetch(watchUrl, { credentials: 'include' });
+  if (!response.ok) {
+    return { success: false as const, error: `YouTubeの取得に失敗しました（HTTP ${response.status}）` };
+  }
+
+  const html = await response.text();
+  console.log('[Background] HTML length:', html.length);
+
+  const apiKey = extractInnertubeApiKey(html);
+  const clientVersion = extractInnertubeClientVersion(html);
+
+  const playerResponse = extractJsonObjectFromHtml(html, 'ytInitialPlayerResponse');
+  let tracks = extractCaptionTracksFromPlayerResponse(playerResponse);
+  console.log('[Background] playerResponse found:', !!playerResponse);
+  console.log('[Background] tracks:', tracks ? `found ${tracks.length}` : 'not found');
+
+  if (!tracks || tracks.length === 0) {
+    if (!apiKey) {
+      return { success: false as const, error: 'INNERTUBE_API_KEYが見つかりませんでした' };
+    }
+
+    try {
+      tracks = await fetchCaptionTracksViaInnerTubePlayer(videoId, apiKey, clientVersion || undefined, {
+        credentials: 'omit',
+        referrerUrl: watchUrl,
+      });
+      console.log('[Background] tracks (InnerTube):', tracks ? `found ${tracks.length}` : 'not found');
+    } catch (error) {
+      console.warn('[Background] InnerTube player fallback failed:', error);
+      tracks = null;
+    }
+
+    if (!tracks || tracks.length === 0) {
+      return { success: false as const, error: '字幕が見つかりませんでした' };
+    }
+  }
+
+  console.log('[Background] Available tracks:', tracks.map((t: { languageCode?: string; name?: { simpleText?: string } }) =>
+    `${t.languageCode} (${t.name?.simpleText || 'unknown'})`
+  ).join(', '));
+
+  const track = selectCaptionTrack(tracks);
+  console.log('[Background] Selected track:', track?.languageCode);
+
+  const preferredLanguageCode = track?.languageCode;
+  const baseUrl = track?.baseUrl;
+  if (!baseUrl) {
+    return { success: false as const, error: '字幕URLが見つかりませんでした' };
+  }
+
+  console.log('[Background] Fetching caption from URL');
+  let items = await fetchCaptionItemsFromBaseUrl(baseUrl, watchUrl);
+
+  if (items.length === 0 && apiKey) {
+    try {
+      const refreshedTracks = await fetchCaptionTracksViaInnerTubePlayer(videoId, apiKey, clientVersion || undefined, {
+        credentials: 'omit',
+        referrerUrl: watchUrl,
+      });
+      if (refreshedTracks && refreshedTracks.length > 0) {
+        const refreshedTrack =
+          (preferredLanguageCode
+            ? refreshedTracks.find((t: { languageCode?: string }) => t.languageCode === preferredLanguageCode)
+            : null) || selectCaptionTrack(refreshedTracks);
+
+        const refreshedBaseUrl = refreshedTrack?.baseUrl;
+        if (refreshedBaseUrl && refreshedBaseUrl !== baseUrl) {
+          console.log('[Background] Retrying caption fetch with InnerTube baseUrl');
+          items = await fetchCaptionItemsFromBaseUrl(refreshedBaseUrl, watchUrl);
+        }
+      }
+    } catch (error) {
+      console.warn('[Background] InnerTube retry failed:', error);
+    }
+  }
+  console.log('[Background] Parsed items count:', items.length);
+
+  if (items.length === 0) {
+    return { success: false as const, error: '字幕が空でした' };
+  }
+
+  return { success: true as const, items };
+}
+
+async function fetchTranscriptViaServer(videoId: string): Promise<{ success: true; data: TranscriptItem[] } | { success: false; error: string }> {
+  const apiBase = (await chromeStorage.getItem('transcriptApiUrl'))?.trim();
+  if (!apiBase) {
+    return { success: false, error: 'transcriptApiUrl is not set' };
+  }
+
+  const endpoint = apiBase.replace(/\/$/, '') + '/api/transcript';
+  const payload = {
+    url: `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`,
+    extractComments: false
+  };
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      return { success: false, error: `Transcript API failed: HTTP ${response.status}` };
+    }
+
+    const data = await response.json();
+    const rawData = typeof data?.content === 'string' ? JSON.parse(data.content) : data;
+    const transcript = rawData?.transcript;
+
+    if (!Array.isArray(transcript) || transcript.length === 0) {
+      return { success: false, error: '字幕が空でした' };
+    }
+
+    const items = transcript
+      .map((t: { time?: string; text?: string }) => ({
+        time: String(t.time ?? ''),
+        text: String(t.text ?? '').trim()
+      }))
+      .filter((t: { time: string; text: string }) => t.text.length > 0);
+
+    if (items.length === 0) {
+      return { success: false, error: '字幕が空でした' };
+    }
+
+    return { success: true, data: items };
+  } catch (error) {
+    return { success: false, error: (error as Error).message || 'Transcript API fetch failed' };
+  }
+}
+
+// MAINワールドでスクリプトを実行して字幕を取得（CORS回避）
+async function fetchTranscriptViaMainWorld(videoId: string, tabId: number): Promise<{ success: true; data: TranscriptItem[] } | { success: false; error: string }> {
+  console.log('[Background] Fetching transcript via MAIN world for:', videoId);
+
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: async (videoId: string) => {
+        // この関数はページのコンテキストで実行される（CORSなし）
+
+        function formatTime(seconds: number): string {
+          const total = Math.max(0, Math.floor(seconds));
+          const hours = Math.floor(total / 3600);
+          const minutes = Math.floor((total % 3600) / 60);
+          const secs = total % 60;
+          const pad = (v: number) => String(v).padStart(2, '0');
+          return hours > 0 ? `${pad(hours)}:${pad(minutes)}:${pad(secs)}` : `${pad(minutes)}:${pad(secs)}`;
+        }
+
+        function decodeHtmlEntities(text: string): string {
+          return text
+            .replace(/<br\s*\/?>/gi, '\n')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+            .replace(/&#x([0-9a-fA-F]+);/g, (_, code) => String.fromCharCode(parseInt(code, 16)));
+        }
+
+        function parseXml(xml: string): Array<{ time: string; text: string }> {
+          const items: Array<{ time: string; text: string }> = [];
+          try {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(xml, 'text/xml');
+            const nodes = Array.from(doc.getElementsByTagName('text'));
+            if (nodes.length > 0) {
+              for (const node of nodes) {
+                const start = Number(node.getAttribute('start') || '0');
+                if (!Number.isFinite(start)) continue;
+                const rawText = decodeHtmlEntities(node.textContent || '');
+                const cleaned = rawText.replace(/\s+/g, ' ').trim();
+                if (cleaned) {
+                  items.push({ time: formatTime(start), text: cleaned });
+                }
+              }
+              return items;
+            }
+          } catch {
+            // ignore and fallback
+          }
+          const normalized = xml.replace(/<br\s*\/?>/gi, '\n');
+          const regex = /<text[^>]*start="([\d.]+)"[^>]*>([\s\S]*?)<\/text>/g;
+          let match;
+          while ((match = regex.exec(normalized)) !== null) {
+            const start = Number(match[1]);
+            if (!Number.isFinite(start)) continue;
+            const rawText = decodeHtmlEntities(match[2] || '');
+            const cleaned = rawText.replace(/\s+/g, ' ').trim();
+            if (cleaned) {
+              items.push({ time: formatTime(start), text: cleaned });
+            }
+          }
+          return items;
+        }
+
+        function parseJson(jsonText: string): Array<{ time: string; text: string }> {
+          try {
+            const data = JSON.parse(jsonText);
+            const events = data?.events;
+            if (!Array.isArray(events)) return [];
+            const items: Array<{ time: string; text: string }> = [];
+            for (const event of events) {
+              const startMs = event.tStartMs || 0;
+              const segs = event.segs;
+              if (!Array.isArray(segs)) continue;
+              const text = segs.map((seg: { utf8?: string }) => seg.utf8 || '').join('');
+              const cleaned = text.replace(/\s+/g, ' ').trim();
+              if (cleaned && cleaned !== '\n') {
+                items.push({ time: formatTime(startMs / 1000), text: cleaned });
+              }
+            }
+            return items;
+          } catch {
+            return [];
+          }
+        }
+
+        function withParam(url: string, key: string, value: string): string {
+          try {
+            const target = new URL(url);
+            target.searchParams.set(key, value);
+            return target.toString();
+          } catch {
+            const sep = url.includes('?') ? '&' : '?';
+            return `${url}${sep}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
+          }
+        }
+
+        async function fetchCaptionText(
+          url: string,
+          label: string,
+          params: { referrerUrl?: string; credentials: RequestCredentials },
+        ) {
+          const response = await fetch(url, {
+            credentials: params.credentials,
+            cache: 'no-store',
+            referrer: params.referrerUrl,
+          });
+          const contentType = response.headers.get('content-type');
+          const contentLength = response.headers.get('content-length');
+          console.log(
+            `[MAIN] ${label} status:`,
+            response.status,
+            'type:',
+            response.type,
+            'content-type:',
+            contentType,
+            'content-length:',
+            contentLength,
+            'redirected:',
+            response.redirected,
+          );
+          const text = response.ok ? await response.text() : '';
+          console.log(`[MAIN] ${label} length:`, text.length, 'url:', response.url);
+          return text;
+        }
+
+        async function fetchCaptionItemsFromBaseUrl(baseUrl: string, labelPrefix: string, referrerUrl?: string) {
+          const candidates = [
+            { label: `${labelPrefix} Base`, url: baseUrl },
+            { label: `${labelPrefix} JSON`, url: withParam(baseUrl, 'fmt', 'json3') },
+            { label: `${labelPrefix} XML`, url: withParam(baseUrl, 'fmt', 'srv3') },
+          ];
+
+          const tried = new Set<string>();
+          for (const candidate of candidates) {
+            if (tried.has(candidate.url)) continue;
+            tried.add(candidate.url);
+
+            const captionTextInclude = await fetchCaptionText(candidate.url, candidate.label, {
+              credentials: 'include',
+              referrerUrl,
+            });
+
+            let captionText = captionTextInclude;
+            if (!captionText.trim()) {
+              const captionTextOmit = await fetchCaptionText(candidate.url, `${candidate.label} (omit)`, {
+                credentials: 'omit',
+                referrerUrl,
+              });
+              captionText = captionTextOmit;
+            }
+
+            if (!captionText.trim()) continue;
+            const items = captionText.trim().startsWith('{') ? parseJson(captionText) : parseXml(captionText);
+            if (items.length > 0) {
+              return items;
+            }
+          }
+
+          throw new Error('字幕データが空です');
+        }
+
+        try {
+          console.log('[MAIN] Fetching transcript for:', videoId);
+
+          // InnerTube APIを使用して字幕を取得
+          // これはYouTubeが内部で使用しているAPIで、より確実に動作する
+          async function fetchViaInnerTube(): Promise<Array<{ time: string; text: string }>> {
+            console.log('[MAIN] Trying InnerTube player API...');
+
+            const ytcfg = (window as any)?.ytcfg;
+            const apiKey = ytcfg?.get?.('INNERTUBE_API_KEY');
+            const context = ytcfg?.get?.('INNERTUBE_CONTEXT');
+            const clientName =
+              ytcfg?.get?.('INNERTUBE_CONTEXT_CLIENT_NAME') ??
+              ytcfg?.get?.('INNERTUBE_CLIENT_NAME');
+            const clientVersion =
+              ytcfg?.get?.('INNERTUBE_CONTEXT_CLIENT_VERSION') ??
+              ytcfg?.get?.('INNERTUBE_CLIENT_VERSION');
+            const visitorData = ytcfg?.get?.('VISITOR_DATA');
+            const signatureTimestamp = ytcfg?.get?.('STS');
+
+            if (!apiKey || !context) {
+              throw new Error('InnerTube: ytcfg is missing');
+            }
+
+            const endpoint = `https://www.youtube.com/youtubei/v1/player?key=${encodeURIComponent(apiKey)}`;
+            const payload: any = {
+              context: {
+                ...context,
+                client: {
+                  ...(context.client || {}),
+                  hl: context.client?.hl || 'ja',
+                  gl: context.client?.gl || 'JP',
+                  clientName: context.client?.clientName || 'WEB',
+                  clientVersion: context.client?.clientVersion || '2.20241201.00.00'
+                }
+              },
+              videoId
+            };
+
+            if (signatureTimestamp) {
+              payload.playbackContext = {
+                contentPlaybackContext: { signatureTimestamp }
+              };
+            }
+
+            const headers: Record<string, string> = {
+              'Content-Type': 'application/json'
+            };
+            if (clientName !== undefined && clientName !== null) {
+              headers['X-Youtube-Client-Name'] = String(clientName);
+            }
+            if (clientVersion) {
+              headers['X-Youtube-Client-Version'] = String(clientVersion);
+            }
+            if (visitorData) {
+              headers['X-Goog-Visitor-Id'] = String(visitorData);
+            }
+
+            const response = await fetch(endpoint, {
+              method: 'POST',
+              headers,
+              credentials: 'include',
+              body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+              throw new Error(`InnerTube player failed: HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+            console.log('[MAIN] InnerTube player response received');
+
+            const tracks = data?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+            if (!Array.isArray(tracks) || tracks.length === 0) {
+              throw new Error('InnerTube: No captionTracks found');
+            }
+
+            const langPriority = ['ja', 'ja-Hans', 'ja-Hant', 'en', 'en-US', 'en-GB'];
+            let track = null;
+            for (const lang of langPriority) {
+              track = tracks.find((t: { languageCode?: string }) => t.languageCode === lang);
+              if (track) break;
+            }
+            if (!track) track = tracks[0];
+
+            let baseUrl = track?.baseUrl || track?.url;
+            if (!baseUrl && track?.signatureCipher) {
+              const params = new URLSearchParams(track.signatureCipher);
+              const url = params.get('url');
+              const sp = params.get('sp') || 'signature';
+              const s = params.get('s');
+              if (url) {
+                baseUrl = s ? `${url}&${sp}=${s}` : url;
+              }
+            }
+
+            if (!baseUrl) {
+              throw new Error('InnerTube: baseUrl not found');
+            }
+
+            console.log('[MAIN] InnerTube selected track:', track.languageCode);
+            const watchUrl = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
+            return await fetchCaptionItemsFromBaseUrl(baseUrl, 'InnerTube Caption', watchUrl);
+          }
+
+          // timedtext APIを使用（フォールバック）
+          async function fetchViaTimedText(): Promise<Array<{ time: string; text: string }>> {
+            console.log('[MAIN] Trying timedtext API...');
+
+            const watchUrl = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
+            const pageResponse = await fetch(watchUrl, { credentials: 'include' });
+            if (!pageResponse.ok) throw new Error('Failed to fetch YouTube page');
+
+            const html = await pageResponse.text();
+            console.log('[MAIN] HTML length:', html.length);
+
+            function extractCaptionTracksFromCaptionsJson(htmlText: string) {
+              const token = '"captions":';
+              const parts = htmlText.split(token);
+              if (parts.length < 2) return null;
+              const rest = parts[1];
+              const endTokens = [',"videoDetails"', ',"microformat"', ',"playbackTracking"'];
+              let endIndex = -1;
+              for (const endToken of endTokens) {
+                const idx = rest.indexOf(endToken);
+                if (idx !== -1) {
+                  endIndex = idx;
+                  break;
+                }
+              }
+              if (endIndex === -1) return null;
+              const raw = rest.slice(0, endIndex);
+              const cleaned = raw.replace(/\n/g, '').replace(/\\n/g, '');
+              try {
+                const captionsJson = JSON.parse(cleaned);
+                return captionsJson?.playerCaptionsTracklistRenderer?.captionTracks || null;
+              } catch {
+                return null;
+              }
+            }
+
+            let tracks = extractCaptionTracksFromCaptionsJson(html);
+            let trackSource = 'captions-split';
+            if (!Array.isArray(tracks) || tracks.length === 0) {
+              const tokenIndex = html.indexOf('ytInitialPlayerResponse');
+              if (tokenIndex === -1) throw new Error('ytInitialPlayerResponse not found');
+
+              const startIndex = html.indexOf('{', tokenIndex);
+              if (startIndex === -1) throw new Error('JSON start not found');
+
+              let depth = 0, inString = false, escaped = false;
+              let endIndex = startIndex;
+              for (let i = startIndex; i < html.length; i++) {
+                const ch = html[i];
+                if (inString) {
+                  if (escaped) { escaped = false; continue; }
+                  if (ch === '\\') { escaped = true; continue; }
+                  if (ch === '"') { inString = false; }
+                  continue;
+                }
+                if (ch === '"') { inString = true; continue; }
+                if (ch === '{') { depth++; continue; }
+                if (ch === '}') {
+                  depth--;
+                  if (depth === 0) { endIndex = i + 1; break; }
+                }
+              }
+
+              const jsonText = html.slice(startIndex, endIndex);
+              const playerResponse = JSON.parse(jsonText);
+              console.log('[MAIN] playerResponse parsed');
+              tracks = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+              trackSource = 'ytInitialPlayerResponse';
+            }
+
+            if (!Array.isArray(tracks) || tracks.length === 0) {
+              throw new Error('字幕トラックが見つかりませんでした');
+            }
+
+            console.log('[MAIN] Caption tracks source:', trackSource);
+            console.log('[MAIN] Available tracks:', tracks.map((t: { languageCode?: string }) => t.languageCode).join(', '));
+
+            const langPriority = ['ja', 'ja-Hans', 'ja-Hant', 'en', 'en-US', 'en-GB'];
+            let track = null;
+            for (const lang of langPriority) {
+              track = tracks.find((t: { languageCode?: string }) => t.languageCode === lang);
+              if (track) break;
+            }
+            if (!track) track = tracks[0];
+
+            let baseUrl = track?.baseUrl || track?.url;
+            if (!baseUrl && track?.signatureCipher) {
+              const params = new URLSearchParams(track.signatureCipher);
+              const url = params.get('url');
+              const sp = params.get('sp') || 'signature';
+              const s = params.get('s');
+              if (url) {
+                baseUrl = s ? `${url}&${sp}=${s}` : url;
+              }
+            }
+            if (!baseUrl) throw new Error('字幕URLが見つかりませんでした');
+
+            console.log('[MAIN] Selected track:', track.languageCode);
+
+            return await fetchCaptionItemsFromBaseUrl(baseUrl, 'Caption', watchUrl);
+          }
+
+          // まずInnerTube APIを試し、失敗したらtimedtextにフォールバック
+          let items: Array<{ time: string; text: string }> = [];
+
+          try {
+            items = await fetchViaInnerTube();
+          } catch (innerTubeError) {
+            console.log('[MAIN] InnerTube failed:', (innerTubeError as Error).message);
+            console.log('[MAIN] Falling back to timedtext...');
+            items = await fetchViaTimedText();
+          }
+
+          console.log('[MAIN] Final parsed items:', items.length);
+          if (items.length === 0) throw new Error('字幕のパースに失敗しました');
+
+          return { success: true, items };
+
+        } catch (error) {
+          console.error('[MAIN] Error:', error);
+          return { success: false, error: (error as Error).message || '字幕の取得に失敗しました' };
+        }
+      },
+      args: [videoId]
+    });
+
+    const result = results[0]?.result;
+    if (!result) {
+      return { success: false, error: 'スクリプト実行結果が取得できませんでした' };
+    }
+
+    if (result.success && result.items) {
+      console.log('[Background] MAIN world transcript success:', result.items.length, 'items');
+      return { success: true, data: result.items as TranscriptItem[] };
+    } else {
+      return { success: false, error: result.error || '字幕の取得に失敗しました' };
+    }
+  } catch (error) {
+    console.error('[Background] MAIN world execution error:', error);
+    return { success: false, error: (error as Error).message || 'スクリプト実行に失敗しました' };
+  }
+}
+
+// ========================================
 // インストール時の初期化
 // ========================================
 
@@ -223,7 +1007,10 @@ chrome.runtime.onMessage.addListener((message: Message, sender, sendResponse) =>
     console.log('[Background] Message received:', message);
   }
 
-  handleMessage(message)
+  // FETCH_TRANSCRIPT_MAIN_WORLD の場合は sender.tab.id を使用
+  const senderTabId = sender.tab?.id;
+
+  handleMessage(message, senderTabId)
     .then(response => {
       if (isGeminiMessage) {
         console.log('[Background] Sending response:', { success: response.success });
@@ -247,7 +1034,7 @@ chrome.runtime.onMessage.addListener((message: Message, sender, sendResponse) =>
 /**
  * メッセージを処理
  */
-async function handleMessage(message: Message): Promise<Response> {
+async function handleMessage(message: Message, senderTabId?: number): Promise<Response> {
   try {
     switch (message.type) {
       // 認証
@@ -322,6 +1109,48 @@ async function handleMessage(message: Message): Promise<Response> {
           return { success: false, error: result.error || 'Geminiの呼び出しに失敗しました' };
         }
         return { success: true, data: result.text };
+      }
+
+      case MessageType.GET_YOUTUBE_TRANSCRIPT: {
+        const videoId = message.videoId?.trim();
+        if (!videoId) {
+          return { success: false, error: '動画IDが不正です' };
+        }
+        const result = await fetchYoutubeTranscript(videoId);
+        if (!result.success) {
+          return { success: false, error: result.error };
+        }
+        return { success: true, data: result.items };
+      }
+
+      case MessageType.FETCH_TRANSCRIPT_MAIN_WORLD: {
+        const videoId = (message as { videoId: string }).videoId?.trim();
+        if (!videoId) {
+          return { success: false, error: '動画IDが不正です' };
+        }
+        if (!senderTabId) {
+          return { success: false, error: 'タブIDが取得できませんでした' };
+        }
+        try {
+          const serverResult = await fetchTranscriptViaServer(videoId);
+          if (serverResult.success) {
+            return serverResult;
+          }
+          if (serverResult.error !== 'transcriptApiUrl is not set') {
+            console.warn('[Background] Transcript API failed, falling back:', serverResult.error);
+          }
+
+          const bgResult = await fetchYoutubeTranscript(videoId);
+          if (bgResult.success) {
+            return { success: true, data: bgResult.items };
+          }
+          console.warn('[Background] Background transcript failed, falling back:', bgResult.error);
+
+          const result = await fetchTranscriptViaMainWorld(videoId, senderTabId);
+          return result;
+        } catch (error) {
+          return { success: false, error: (error as Error).message || '字幕取得に失敗しました' };
+        }
       }
 
       // フォルダ操作
